@@ -169,7 +169,32 @@ AI 使用 CLI 更新時，直接寫回原本的 HTML，採用檔案鎖、版本�
 
 工具 repo 保存程式、Agent 約定、寫作準則與測試。另可使用一個私人資料 repo 保存完整討論 HTML。HTML 仍是討論紀錄；GitHub 提供版本同步，離線閱讀不需要 GitHub。
 
-先在 GitHub 建立資料 repo，再指定一個空的本機目錄：
+### 在另一台電腦取得討論
+
+這個工具 repo 的 `discussion-repo.json` 記錄共用資料 repo 的位置。它只包含遠端網址、分支與相對目錄，不包含憑證或討論內容。第一次執行 `npm start` 時，工具依此設定接收端，並在背景取得討論。已有本機同步設定時，工具沿用原設定。
+
+另一台電腦先登入有私人 repo 存取權的 GitHub 帳號。在工具 repo 目錄執行：
+
+```sh
+git pull --ff-only
+node bin/sync.mjs setup
+node bin/board.mjs list
+npm start
+```
+
+`setup` 會立即嘗試取得遠端討論。看到 `state: "synced"` 與白板清單後，開啟 <http://127.0.0.1:4317>。如果輸出為 `pending`，先依錯誤訊息檢查 Git 登入、repo 權限或網路。只下載工具 repo 不會包含討論 HTML；這一步會取得獨立資料 repo 的內容。
+
+已用 Git 下載資料 repo 時，指定該目錄：
+
+```sh
+node bin/sync.mjs setup --repo /path/to/chat-board-discussions
+```
+
+工具會檢查 repo 根目錄、origin、分支與 HTML，再建立本機索引。已下載的 HTML 不需要網路就能登記與閱讀。原始專案路徑保留在討論內容中；本機索引指向這台電腦的 HTML 位置。
+
+### 設定其他資料 repo
+
+先在 GitHub 建立資料 repo，再指定空目錄或已下載的資料 repo：
 
 ```sh
 node bin/sync.mjs init \

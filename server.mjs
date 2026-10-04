@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from './lib/storage.mjs';
 import { BoardError, renderDocument } from './lib/document.mjs';
-import { startSyncPolling } from './lib/sync.mjs';
+import { startSyncPolling, setupSync } from './lib/sync.mjs';
 
 const assets = {
   '/': [new URL('./web/index.html', import.meta.url), 'text/html; charset=utf-8'],
@@ -85,8 +85,13 @@ export function createBoardServer({ store = new Store(), pollInterval = 700 } = 
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const port = Number(process.env.CHAT_BOARD_PORT || 4317);
-  const server = createBoardServer();
-  const stopSync = startSyncPolling(new Store());
+  const store = new Store();
+  try {
+    const setup = setupSync(store);
+    if (setup.configured) console.log(`討論資料 repo：${setup.repo}；背景同步會取得遠端更新。`);
+  } catch (error) { console.error(`討論資料未接入：${error.message}\n請在 chat 提供 node bin/sync.mjs status 的輸出。`); }
+  const server = createBoardServer({ store });
+  const stopSync = startSyncPolling(store);
   server.on('close', stopSync);
   server.on('error', error => {
     console.error(error.code === 'EADDRINUSE' ? `連接埠 ${port} 已被使用。可用 CHAT_BOARD_PORT=4318 npm start 指定其他連接埠。` : error.message);

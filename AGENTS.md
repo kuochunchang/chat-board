@@ -39,3 +39,4 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 - Keep the registry limited to references, not discussion content. Never overwrite an existing HTML record during creation.
 - The HTTP server is read-only; update files through CLI operations. For UI changes, inspect the actual page and test page switching, live updates and standalone HTML reading.
 - GitHub synchronization is optional. Run `node bin/sync.mjs help` for setup. The server polls for remote discussion versions; CLI saves attempt an immediate push. Do not force-push discussion history or automatically choose a winner for conflicting edits.
+- On another computer, use `node bin/sync.mjs setup` to obtain the data repo from `discussion-repo.json` and build local references. `npm start` also initializes this connection when no local sync configuration exists. Keep local absolute paths and credentials out of the shared reference file.

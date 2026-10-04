@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Store, readBoard } from '../lib/storage.mjs';
-import { configureSync, syncOnce, syncStatus, resolveSyncConflict } from '../lib/sync.mjs';
+import { configureSync, syncOnce, syncStatus, resolveSyncConflict, setupSync } from '../lib/sync.mjs';
 import { createDocument, applyUpdate } from '../lib/document.mjs';
 import { mergeDiscussion, DiscussionConflict } from '../lib/merge.mjs';
 
@@ -148,4 +148,65 @@ test('a failed network push reports pending and keeps the local file and Git sna
   assert.ok(git(a.repo, 'show', `refs/chat-board/pending:boards/${created.id}.html`).includes('尚未上傳'));
   git(a.repo, 'remote', 'set-url', '--push', 'origin', remote);
   assert.equal(syncOnce(a.store).state, 'synced');
+});
+
+test('a fresh computer uses the shared reference to download all discussions and keep original metadata', () => {
+  const { a, root, remote } = fixture();
+  const first = a.store.create({ project: a.project, title: '已結束的討論' });
+  a.store.update(first.id, { expectedRevision: first.doc.revision, actor: 'ai', summary: '結束', operations: [{ op: 'finish' }] });
+  const second = a.store.create({ project: a.project, title: '另一份討論' });
+  const folder = join(root, 'fresh', 'tool'); mkdirSync(folder, { recursive: true });
+  const manifest = join(folder, 'discussion-repo.json');
+  writeFileSync(manifest, JSON.stringify({ remote, directory: '../discussions', storage: 'repo' }));
+  const store = new Store(join(folder, '.chat-board', 'index.json'));
+  assert.equal(store.list().length, 0);
+  const setup = setupSync(store, { manifest });
+  assert.equal(setup.configured, true);
+  assert.equal(syncOnce(store).state, 'synced');
+  assert.equal(store.list().length, 2);
+  assert.equal(store.get(first.id).doc.status, 'finished');
+  assert.deepEqual(store.get(second.id).doc, a.store.get(second.id).doc);
+  assert.ok(store.get(first.id).path.startsWith(join(root, 'fresh', 'discussions')));
+  assert.equal(store.get(first.id).doc.project.path, a.project);
+  assert.equal(setupSync(store, { manifest }).registered, 0);
+});
+
+test('an existing data clone is registered without network access or editing its HTML', () => {
+  const { a, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '已 clone 的討論' });
+  const clone = join(root, 'cloned-data');
+  git(root, 'clone', '--branch', 'main', remote, clone);
+  const file = join(clone, 'boards', `${created.id}.html`);
+  const original = readFileSync(file, 'utf8');
+  writeFileSync(`${file}.chat-board.lock`, '');
+  const store = new Store(join(root, 'new-registry', 'index.json'));
+  configureSync(store, { repo: clone, remote, storage: 'repo' });
+  assert.equal(store.list().length, 1);
+  assert.equal(readFileSync(file, 'utf8'), original);
+  assert.equal(store.get(created.id).doc.project.path, a.project);
+  assert.equal(git(clone, 'config', '--get', 'chatboard.managed'), 'true');
+  git(clone, 'remote', 'set-url', 'origin', 'git@github.com:example/discussions.git');
+  const ssh = configureSync(store, { repo: clone, remote: 'https://github.com/example/discussions.git', storage: 'repo' });
+  assert.equal(ssh.remote, 'git@github.com:example/discussions.git');
+  // Reconstruct references while offline. A downloaded HTML needs no GitHub connection.
+  git(clone, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  const config = join(root, 'new-registry', 'sync.json');
+  const nextStore = new Store(join(root, 'next-registry', 'index.json'));
+  mkdirSync(join(root, 'next-registry')); writeFileSync(join(root, 'next-registry', 'sync.json'), readFileSync(config));
+  assert.equal(setupSync(nextStore).registered, 1);
+  assert.deepEqual(nextStore.get(created.id).doc, store.get(created.id).doc);
+});
+
+test('connecting a cloned repository rejects mismatched origins and source-code repositories', () => {
+  const { a, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '資料' });
+  const clone = join(root, 'wrong-clone');git(root, 'clone', '--branch', 'main', remote, clone);
+  const store = new Store(join(root, 'rejected', 'index.json'));
+  assert.throws(() => configureSync(store, { repo: clone, remote: join(root, 'another.git') }), /origin/);
+  assert.equal(git(clone, 'config', '--get', 'remote.origin.url'), remote);
+  writeFileSync(join(clone, 'source.mjs'), 'export default 1;');
+  git(clone, 'add', 'source.mjs');
+  assert.throws(() => configureSync(store, { repo: clone, remote }), /資料 repo 以外/);
+  assert.ok(!existsSync(join(root, 'rejected', 'sync.json')));
+  assert.equal(readBoard(join(clone, 'boards', `${created.id}.html`)).id, created.id);
 });

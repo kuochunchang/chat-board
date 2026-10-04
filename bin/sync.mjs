@@ -1,5 +1,5 @@
 import { Store } from '../lib/storage.mjs';
-import { configureSync, syncOnce, syncStatus, resolveSyncConflict, startSyncPolling } from '../lib/sync.mjs';
+import { configureSync, syncOnce, syncStatus, resolveSyncConflict, startSyncPolling, setupSync } from '../lib/sync.mjs';
 
 try {
   const [command = 'help', ...args] = process.argv.slice(2);
@@ -11,15 +11,21 @@ try {
   const store = new Store(options.registry);
   let result;
   if (command === 'init') result = configureSync(store, { ...options, projects: options.projects?.split(',') });
+  else if (command === 'setup') {
+    const setup = setupSync(store, { manifest: options.manifest, repo: options.repo });
+    result = setup.configured ? { ...syncOnce(store), repo: setup.repo } : setup;
+  }
   else if (command === 'once') result = syncOnce(store);
   else if (command === 'status') result = syncStatus(store);
   else if (command === 'resolve') result = resolveSyncConflict(store, { file: options.file, revision: options.revision, remoteCommit: options['remote-commit'], reason: options.reason });
   else if (command === 'watch') {
+    setupSync(store);
     const stop = startSyncPolling(store, { keepAlive: true });
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
     result = { state: 'watching', message: '定期同步討論。Ctrl+C 停止；本機 HTML 保留。' };
   }
   else if (command === 'help') result = { instructions: [
+    'node bin/sync.mjs setup [--repo /path/to/data-repo]（依 discussion-repo.json 設定接收端，登記本機 HTML 並取得遠端內容）',
     'node bin/sync.mjs init --repo /path/to/empty-data-repo --remote https://github.com/owner/chat-board-discussions.git [--projects /absolute/project/path] [--interval 5000] [--storage project|repo]',
     'node bin/sync.mjs once', 'node bin/sync.mjs status',
     'node bin/sync.mjs watch（不需重啟既有白板服務，即可開始背景同步）',

@@ -1,0 +1,6 @@
+{
+  "remote": "https://github.com/kuochunchang/chat-board-discussions.git",
+  "branch": "main",
+  "directory": "../chat-board-discussions",
+  "storage": "repo"
+}
