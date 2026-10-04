@@ -1,0 +1,6 @@
+.chat-board/
+*.chat-board.lock
+*.chat-board.tmp
+.DS_Store
+# Local originals stay in place. GitHub discussion copies use the data repo.
+docs/discussions/

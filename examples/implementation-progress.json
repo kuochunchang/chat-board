@@ -1,0 +1,40 @@
+{
+  "expectedRevision": 3,
+  "actor": "ai",
+  "summary": "第一版完成：多塊唯讀白板，HTML 顯示即保存",
+  "reason": "依使用者最新要求完成純顯示與多塊白板。7 項自動測試通過，實際頁面已驗證切換白板與即時同步；離線載入與切換透過不連網的測試驗證。",
+  "operations": [
+    {
+      "op": "meta",
+      "topic": "討論留在 chat session；AI 把圖、筆記與決策整理成多塊白板。顯示出來，就已經保存在 HTML。"
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "proactive-updates",
+        "kind": "note",
+        "title": "討論有進展，就整理白板",
+        "text": "出現新方案、釐清限制、形成共識時，AI 更新相關的圖與筆記。你繼續在 chat session 討論，白板跟著思考演進。"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "multiple-whiteboards",
+        "kind": "consensus",
+        "text": "圖、討論筆記與決策可以分開放。依需要新增白板，以頁籤切換觀看，所有內容仍保存在同一份 HTML。"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "first-version-ready",
+        "pageId": "notes",
+        "kind": "note",
+        "title": "第一版已可使用",
+        "text": "這次討論已有三塊白板：工作方式、討論筆記、共識與決策。內容由 AI 整理，畫面即時同步；其他目錄的專案也能建立自己的討論 HTML。",
+        "sources": ["README.md"]
+      }
+    }
+  ]
+}

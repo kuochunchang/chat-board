@@ -1,0 +1,106 @@
+{
+  "expectedRevision": 1,
+  "actor": "ai",
+  "summary": "依最新討論整理成多塊純顯示白板",
+  "reason": "使用者確認 HTML 本身就是紀錄、可跨專案使用；並明確指定所有討論留在 chat session，白板只顯示、不需要操作或另做存檔，且一場討論需要多塊白板。",
+  "operations": [
+    { "op": "page", "page": { "id": "main", "title": "工作方式", "description": "工具、專案與 chat session，怎麼一起使用這份白板。" } },
+    { "op": "page", "page": { "id": "notes", "title": "討論筆記", "description": "留下值得記住的觀察、想法與下一步。" } },
+    { "op": "page", "page": { "id": "decisions", "title": "共識與決策", "description": "在 chat session 裡確認的方向，以及背後的理由。" } },
+    {
+      "op": "diagram",
+      "diagram": {
+        "id": "working-model",
+        "pageId": "main",
+        "title": "一份 HTML，串起討論與專案",
+        "caption": "工具負責預覽；AI 根據專案與討論更新內容。完整圖、筆記和決策脈絡都留在 HTML 裡。",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 820 264\"><defs><marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 0 L 10 5 L 0 10 z\" fill=\"#a4b39a\"/></marker></defs><rect x=\"18\" y=\"57\" width=\"202\" height=\"111\" rx=\"12\" fill=\"#f2f5ee\" stroke=\"#dce4d4\"/><text x=\"119\" y=\"94\" text-anchor=\"middle\" fill=\"#3d5938\" font-size=\"17\" font-weight=\"600\" font-family=\"sans-serif\">被討論的專案</text><text x=\"119\" y=\"122\" text-anchor=\"middle\" fill=\"#85907b\" font-size=\"12\" font-family=\"sans-serif\">程式碼 · 需求 · 來源</text><text x=\"119\" y=\"145\" text-anchor=\"middle\" fill=\"#85907b\" font-size=\"11\" font-family=\"sans-serif\">可以在其他目錄</text><path d=\"M220 111H302\" fill=\"none\" stroke=\"#a4b39a\" stroke-width=\"1.5\" marker-end=\"url(#arrow)\"/><text x=\"262\" y=\"93\" text-anchor=\"middle\" fill=\"#98a08f\" font-size=\"10\" font-family=\"sans-serif\">閱讀與討論</text><rect x=\"310\" y=\"44\" width=\"202\" height=\"137\" rx=\"12\" fill=\"#ecf3e7\" stroke=\"#afc29f\"/><text x=\"411\" y=\"86\" text-anchor=\"middle\" fill=\"#315b39\" font-size=\"17\" font-weight=\"600\" font-family=\"sans-serif\">HTML 討論白板</text><text x=\"411\" y=\"113\" text-anchor=\"middle\" fill=\"#6d8364\" font-size=\"12\" font-family=\"sans-serif\">SVG · 筆記 · 共識 · 決策</text><text x=\"411\" y=\"139\" text-anchor=\"middle\" fill=\"#6d8364\" font-size=\"12\" font-family=\"sans-serif\">AI 隨討論進展更新</text><path d=\"M512 111H594\" fill=\"none\" stroke=\"#a4b39a\" stroke-width=\"1.5\" marker-end=\"url(#arrow)\"/><text x=\"554\" y=\"93\" text-anchor=\"middle\" fill=\"#98a08f\" font-size=\"10\" font-family=\"sans-serif\">即時同步</text><rect x=\"602\" y=\"57\" width=\"202\" height=\"111\" rx=\"12\" fill=\"#f2f5ee\" stroke=\"#dce4d4\"/><text x=\"703\" y=\"94\" text-anchor=\"middle\" fill=\"#3d5938\" font-size=\"17\" font-weight=\"600\" font-family=\"sans-serif\">本地瀏覽器</text><text x=\"703\" y=\"122\" text-anchor=\"middle\" fill=\"#85907b\" font-size=\"12\" font-family=\"sans-serif\">一起看圖，釐清方向</text><text x=\"703\" y=\"145\" text-anchor=\"middle\" fill=\"#85907b\" font-size=\"11\" font-family=\"sans-serif\">討論留在 chat session</text><path d=\"M411 183V213\" fill=\"none\" stroke=\"#a4b39a\" stroke-width=\"1.5\" marker-end=\"url(#arrow)\"/><text x=\"411\" y=\"243\" text-anchor=\"middle\" fill=\"#829373\" font-size=\"12\" font-family=\"sans-serif\">討論結束，這份 HTML 就是完整紀錄</text></svg>"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "proactive-updates",
+        "pageId": "notes",
+        "kind": "note",
+        "title": "討論有進展，就整理白板",
+        "text": "出現新方案、釐清限制、形成共識時，AI 主動更新相關區塊。保留項目 ID，讓白板持續演進。"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "preserve-reasons",
+        "pageId": "notes",
+        "kind": "idea",
+        "title": "留住思考的轉折",
+        "text": "方案 A 改成 B，也記下為什麼。修改前的文字和 SVG 留在歷史裡，之後能回頭理解決定。"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "next-discussion",
+        "pageId": "notes",
+        "kind": "action",
+        "title": "拿一個實際專案來討論",
+        "text": "指定專案目錄與問題，建立那個專案的白板，在真實討論中調整使用方式。"
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "html-record",
+        "pageId": "decisions",
+        "kind": "decision",
+        "title": "HTML 本身就是紀錄",
+        "text": "顯示的內容已經寫入自包含 HTML，所有白板、圖、筆記與脈絡都在裡面。不需要另外按存檔。",
+        "confirmed": true
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "cross-project",
+        "pageId": "decisions",
+        "kind": "consensus",
+        "title": "工具與被討論專案分開",
+        "text": "白板工具在 chat-board，HTML 預設存進被討論專案的 docs/discussions，可跨目錄使用。",
+        "confirmed": true
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "explicit-approval",
+        "pageId": "decisions",
+        "kind": "consensus",
+        "title": "明確確認，才成為共識",
+        "text": "AI 可以主動整理；提出新想法或繼續聊天，不會自動把上一個方案變成已確認。",
+        "confirmed": true
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "display-only",
+        "pageId": "decisions",
+        "kind": "decision",
+        "title": "討論在 chat，白板只顯示",
+        "text": "提問、討論與確認都在 chat session 進行。AI 更新 HTML，網頁同步呈現；不提供編輯、確認或存檔操作。",
+        "confirmed": true
+      }
+    },
+    {
+      "op": "upsert",
+      "item": {
+        "id": "multiple-whiteboards",
+        "pageId": "decisions",
+        "kind": "consensus",
+        "title": "一場討論可以有多塊白板",
+        "text": "圖、討論筆記與決策可以分開放。依需要新增白板，以頁籤切換觀看，所有內容仍保存在同一份 HTML。",
+        "confirmed": true
+      }
+    }
+  ]
+}

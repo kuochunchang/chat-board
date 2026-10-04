@@ -1,0 +1,14 @@
+{
+  "name": "chat-board",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local, living discussion whiteboard. The HTML is the record.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "board": "node bin/board.mjs",
+    "sync": "node bin/sync.mjs",
+    "test": "node --test"
+  }
+}
