@@ -20,7 +20,7 @@ try {
     result = { state: 'watching', message: '定期同步討論。Ctrl+C 停止；本機 HTML 保留。' };
   }
   else if (command === 'help') result = { instructions: [
-    'node bin/sync.mjs init --repo /path/to/empty-data-repo --remote https://github.com/owner/chat-board-discussions.git [--projects /absolute/project/path] [--interval 5000]',
+    'node bin/sync.mjs init --repo /path/to/empty-data-repo --remote https://github.com/owner/chat-board-discussions.git [--projects /absolute/project/path] [--interval 5000] [--storage project|repo]',
     'node bin/sync.mjs once', 'node bin/sync.mjs status',
     'node bin/sync.mjs watch（不需重啟既有白板服務，即可開始背景同步）',
     'node bin/sync.mjs resolve --file /path/to/reviewed.html --revision N --remote-commit SHA --reason "chat 中明確採用的整合內容與理由"',

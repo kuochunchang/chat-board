@@ -15,6 +15,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 - Preserve item IDs. Supply the revision you just read and use incremental operations. On a conflict, read the current document and reconcile; never force an old revision over new content.
 - Preserve decision reasons and previous content in history. Include source paths when discussing another project's files.
 - Discussion HTML belongs in the discussed project's `docs/discussions/` by default. The tool can operate across directories using `--project` and `--file`.
+- When the user selects centralized data storage (`sync init --storage repo`), new discussion HTML belongs in the configured data repo's `boards/`. Preserve the discussed project's metadata and source paths. An explicit `--file` takes precedence.
 - Updating a discussion record does not authorize changing the discussed project's source code.
 - Prefer illustrated explanations: use a diagram to show the outline and overall structure, then place detailed text below it. Keep diagram labels and text consistent.
 - When GitHub sync is configured, inspect `sync.state` after a CLI write. A saved HTML does not imply a successful push. Report pending uploads or conflicts in chat; preserve both versions and confirmation reasons.

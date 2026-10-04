@@ -173,13 +173,16 @@ AI 使用 CLI 更新時，直接寫回原本的 HTML，採用檔案鎖、版本�
 
 ```sh
 node bin/sync.mjs init \
-  --repo "$PWD/.chat-board/discussions-repo" \
-  --remote https://github.com/OWNER/chat-board-discussions.git
+  --repo "$PWD/../chat-board-discussions" \
+  --remote https://github.com/OWNER/chat-board-discussions.git \
+  --storage repo
 node bin/sync.mjs once
 npm start
 ```
 
 每台電腦需要 Git、資料 repo 的存取權，以及可用的 Git 登入。設定只存在本機 `.chat-board/sync.json`，不包含憑證。資料 repo 只保存 `boards/<討論 ID>.html` 與 Git 歷史；不推送本機索引、同步設定或絕對路徑綁定表。HTML 原有的專案路徑與來源文字會保留。
+
+`--storage repo` 讓新討論直接存入資料 repo 的 `boards`。工具與資料 repo 可放在同一個父目錄。預設的 `--storage project` 仍把新討論存入被討論專案的 `docs/discussions`，再同步副本。明確指定 `new --file` 時，工具使用指定位置。設定儲存方式不會自行搬移既有討論。
 
 預設同步所有已登記白板。只要同步特定專案，就在 `init` 加上 `--projects /absolute/project/path`。多個專案路徑以逗號分隔。此篩選控制本機上傳來源；有資料 repo 存取權的人仍能讀取 repo 內所有討論。需要不同存取權時，使用不同資料 repo。
 

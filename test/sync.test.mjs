@@ -124,6 +124,20 @@ test('merge rejects same-record edits and incompatible page relationships', () =
   assert.deepEqual(mergeDiscussion(base, ours, base), ours);
 });
 
+test('repo storage creates the record directly in the data repo and honors an explicit file', () => {
+  const { a, remote } = fixture();
+  configureSync(a.store, { repo: a.repo, remote, storage: 'repo' });
+  const created = a.store.create({ project: a.project, title: '直接保存資料 repo' });
+  assert.equal(created.path, join(a.repo, 'boards', `${created.id}.html`));
+  assert.equal(created.doc.project.path, a.project);
+  assert.equal(created.sync.state, 'synced');
+  assert.ok(!existsSync(join(a.project, 'docs', 'discussions')));
+  const explicit = a.store.create({ project: a.project, title: '指定位置', file: 'custom.html' });
+  assert.equal(explicit.path, join(a.project, 'custom.html'));
+  assert.equal(explicit.sync.state, 'synced');
+  assert.throws(() => configureSync(a.store, { repo: a.repo, remote, storage: 'unknown' }), /storage/);
+});
+
 test('a failed network push reports pending and keeps the local file and Git snapshot', () => {
   const { a, remote, root } = fixture();
   const created = a.store.create({ project: a.project, title: '推送失敗' });
