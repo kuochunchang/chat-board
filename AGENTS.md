@@ -12,6 +12,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 - When consolidating a discussion, consolidate its pages too. Move notes and diagrams to retained page IDs, then remove empty pages with `{"op":"remove","target":"page","id":"source-page"}` in the same update. Provide a reason; keep at least one page. Previous content and page metadata remain in history.
 - Keep proposals, open questions, notes, explicit consensus, decisions, and actions distinct.
 - Do not treat silence, a new topic, or a suggestion as approval. Mark an item confirmed only when the user explicitly confirms it. Record the evidence in `reason`.
+- Archive a discussion with `archive` to hide it from `list` and the library grid; `list --all` shows archived discussions. Delete only when the user explicitly asks. `delete` accepts only archived discussions and requires `--reason`; with sync configured, the deletion is committed to the data repo and the content stays in Git history.
 - Preserve item IDs. Supply the revision you just read and use incremental operations. On a conflict, read the current document and reconcile; never force an old revision over new content.
 - Preserve decision reasons and previous content in history. Include source paths when discussing another project's files.
 - Discussion HTML belongs in the discussed project's `docs/discussions/` by default. The tool can operate across directories using `--project` and `--file`.

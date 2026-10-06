@@ -224,3 +224,32 @@ test('the server is read-only and streams external CLI file updates', async () =
     controller.abort();
   } finally { controller.abort(); await server.stop(); }
 });
+
+test('archiving is recorded in history, blocks edits until unarchived and works on finished discussions', () => {
+  const doc = createDocument({ title: '封存', project: '/tmp/project' });
+  const finished = applyUpdate(doc, update(doc, [{ op: 'finish' }]));
+  const archived = applyUpdate(finished, update(finished, [{ op: 'archive' }], { reason: '討論已結束，收起來' }));
+  assert.equal(archived.archived, true);
+  assert.deepEqual(archived.history.at(-1).changes[0], { op: 'archive', before: false, after: true });
+  assert.deepEqual(parseDocument(renderDocument(archived)), archived);
+  assert.throws(() => applyUpdate(archived, update(archived, [{ op: 'resume' }])), /取消封存/);
+  assert.throws(() => applyUpdate(archived, update(archived, [{ op: 'archive' }])), /已封存/);
+  const restored = applyUpdate(archived, update(archived, [{ op: 'unarchive' }]));
+  assert.equal(restored.archived, false);
+  assert.throws(() => applyUpdate(restored, update(restored, [{ op: 'unarchive' }])), /尚未封存/);
+  assert.throws(() => renderDocument({ ...doc, archived: 'yes' }), /封存狀態/);
+});
+
+test('deleting requires an archived board, a reason and the current revision', () => {
+  const { store, id, path } = fixture();
+  assert.throws(() => store.delete(path, { reason: '不需要了' }), /先封存/);
+  const archived = store.updateFile(path, update(readBoard(path), [{ op: 'archive' }]));
+  assert.equal(store.list()[0].archived, true);
+  assert.throws(() => store.delete(path, { reason: ' ' }), /reason/);
+  assert.throws(() => store.delete(path, { reason: '不需要了', revision: 1 }), /重新讀取/);
+  const result = store.delete(path, { reason: '不需要了', revision: archived.doc.revision });
+  assert.equal(result.deleted, true); assert.equal(result.id, id);
+  assert.ok(!existsSync(path));
+  assert.equal(store.list().length, 0);
+  assert.throws(() => store.get(id), /尚未登記/);
+});

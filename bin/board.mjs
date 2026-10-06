@@ -6,7 +6,7 @@ import { BoardError, KINDS } from '../lib/document.mjs';
 const help = `共板：HTML 就是討論紀錄。所有指令輸出 JSON，供 AI 與人共同使用。
 
 node bin/board.mjs new --project /path/to/project --title "討論主題" [--topic "目標"] [--file docs/discussions/name.html]
-node bin/board.mjs list
+node bin/board.mjs list [--all]
 node bin/board.mjs read --file /path/to/record.html
 node bin/board.mjs open --file /path/to/record.html
 node bin/board.mjs update --file /path/to/record.html --input /path/to/update.json
@@ -18,10 +18,15 @@ node bin/board.mjs confirm --file /path/to/record.html --id item-id --reason "�
 node bin/board.mjs checkpoint --file /path/to/record.html --label "轉折" [--reason "原因"]
 node bin/board.mjs finish --file /path/to/record.html [--reason "結論"]
 node bin/board.mjs resume --file /path/to/record.html [--reason "原因"]
+node bin/board.mjs archive --file /path/to/record.html [--reason "原因"]
+node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"]
+node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確要求刪除的原因" [--revision N]
 
 可用 kind：${KINDS.join(', ')}
 可加 --revision N 避免覆蓋別人的新更新；update 的 JSON 必須包含 expectedRevision。
 合併分頁：先在同一份 update 搬移筆記與圖，再以 {"op":"remove","target":"page","id":"來源頁 ID"} 移除空頁，並提供 reason。至少保留一頁。
+封存：list 預設不列出已封存的討論，加 --all 才列出。已封存的討論要先 unarchive 才能更新。
+刪除：只能刪除已封存的討論，並需要 --reason。有設定同步時，刪除會提交到資料 repo，內容保留在 Git 歷史。
 伺服器：npm start（預設 http://127.0.0.1:4317）
 跨專案使用時，將指令裡 bin/board.mjs 換成這個工具的絕對路徑。
 `;
@@ -32,7 +37,7 @@ function argumentsOf(args) {
     const arg = args[index];
     if (!arg.startsWith('--')) throw new BoardError(`未知的參數：${arg}`);
     const name = arg.slice(2);
-    if (['confirmed','help'].includes(name)) { options[name] = true; continue; }
+    if (['confirmed','help','all'].includes(name)) { options[name] = true; continue; }
     if (args[index + 1] === undefined || args[index + 1].startsWith('--')) throw new BoardError(`--${name} 需要值。`);
     options[name] = args[++index];
   }
@@ -46,13 +51,14 @@ try {
   else {
     const store = new Store(options.registry);
     let result;
-    if (command === 'list') result = { boards: store.list() };
+    if (command === 'list') result = { boards: store.list().filter(board => options.all || !board.archived) };
     else if (command === 'new') result = store.create(options);
     else {
       if (!options.file) throw new BoardError('需要 --file 指定 HTML 紀錄。');
       const file = resolve(options.file);
       const doc = readBoard(file);
       if (command === 'read') result = { path: file, doc };
+      else if (command === 'delete') result = store.delete(file, { reason: options.reason, revision: options.revision });
       else if (command === 'open') result = store.register(file);
       else {
         let update;
@@ -74,13 +80,13 @@ try {
             if (!item) throw new BoardError('找不到要確認的筆記。');
             operation.op = 'upsert'; operation.item = { ...item, confirmed: true };
           } else if (command === 'checkpoint') operation.label = options.label || '討論里程碑';
-          else if (!['finish','resume'].includes(command)) throw new BoardError(`未知的指令：${command}`);
-          update = { expectedRevision: options.revision ? Number(options.revision) : doc.revision, actor: 'ai', summary: options.summary || (command === 'add' ? `整理筆記：${options.title || ''}` : command === 'page' ? `整理白板：${options.title || ''}` : command === 'diagram' ? `更新關係圖：${options.title || ''}` : command === 'confirm' ? '記錄使用者確認' : command === 'checkpoint' ? options.label || '討論里程碑' : command === 'finish' ? '完成討論' : '重新開啟討論'), reason: options.reason || '', operations: [operation] };
+          else if (!['finish','resume','archive','unarchive'].includes(command)) throw new BoardError(`未知的指令：${command}`);
+          update = { expectedRevision: options.revision ? Number(options.revision) : doc.revision, actor: 'ai', summary: options.summary || (command === 'add' ? `整理筆記：${options.title || ''}` : command === 'page' ? `整理白板：${options.title || ''}` : command === 'diagram' ? `更新關係圖：${options.title || ''}` : command === 'confirm' ? '記錄使用者確認' : command === 'checkpoint' ? options.label || '討論里程碑' : command === 'finish' ? '完成討論' : command === 'archive' ? '封存討論' : command === 'unarchive' ? '取消封存' : '重新開啟討論'), reason: options.reason || '', operations: [operation] };
         }
         result = store.updateFile(file, update);
       }
     }
-    if (result.id) result.url = `http://127.0.0.1:${process.env.CHAT_BOARD_PORT || 4317}/boards/${result.id}`;
+    if (result.id && !result.deleted) result.url = `http://127.0.0.1:${process.env.CHAT_BOARD_PORT || 4317}/boards/${result.id}`;
     if (result.doc && command !== 'read') {
       const { id, path, url, doc, sync } = result;
       result = { id, path, url, title: doc.title, revision: doc.revision, pages: doc.pages?.length || 1, items: doc.items.length, diagrams: doc.diagrams.length, ...(sync ? { sync } : {}) };

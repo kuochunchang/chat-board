@@ -21,7 +21,10 @@ export function createBoardServer({ store = new Store(), pollInterval = 700 } = 
   };
   const poll = setInterval(() => {
     try {
-      for (const entry of store.entries()) {
+      const entries = store.entries();
+      const ids = new Set(entries.map(entry => entry.id));
+      for (const id of versions.keys()) if (!ids.has(id)) { versions.delete(id); sendEvent('unavailable', { id }); }
+      for (const entry of entries) {
         let version;
         try { const stat = statSync(entry.path); version = `${stat.mtimeMs}:${stat.size}:${stat.ino}`; }
         catch { version = 'unavailable'; }

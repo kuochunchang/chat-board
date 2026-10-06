@@ -223,3 +223,90 @@ test('connecting a cloned repository rejects mismatched origins and source-code 
   assert.ok(!existsSync(join(root, 'rejected', 'sync.json')));
   assert.equal(readBoard(join(clone, 'boards', `${created.id}.html`)).id, created.id);
 });
+
+const archive = (store, id) => store.update(id, { expectedRevision: store.get(id).doc.revision, actor: 'ai', summary: '封存', operations: [{ op: 'archive' }] });
+
+test('merge combines an archive on one machine with item edits on another', () => {
+  const base = createDocument({ project: '/tmp/project', title: '封存合併' });
+  const ours = applyUpdate(base, { expectedRevision: base.revision, actor: 'ai', operations: [{ op: 'archive' }] });
+  const theirs = applyUpdate(base, change(base, 'note', '另一台電腦'));
+  const merged = mergeDiscussion(base, ours, theirs);
+  assert.equal(merged.archived, true); assert.equal(merged.items[0].text, '另一台電腦');
+});
+
+test('a local deletion is committed with its reason and propagates to another machine', () => {
+  const { a, b, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '要刪除的討論' });
+  syncOnce(b.store);
+  const bPath = b.store.get(created.id).path;
+  archive(a.store, created.id);
+  syncOnce(b.store);
+  const result = a.store.delete(created.path, { reason: '使用者要求刪除' });
+  assert.equal(result.sync.state, 'synced');
+  assert.ok(!existsSync(created.path));
+  assert.ok(!existsSync(join(a.repo, 'boards', `${created.id}.html`)));
+  assert.ok(!git(remote, 'ls-tree', '-r', '--name-only', 'main').includes(created.id));
+  assert.ok(git(remote, 'log', '-1', '--format=%B', 'main').includes('使用者要求刪除'));
+  assert.equal(git(a.repo, 'status', '--porcelain'), '');
+  assert.equal(syncOnce(a.store).state, 'synced');
+  assert.equal(a.store.list().length, 0);
+  assert.equal(syncOnce(b.store).state, 'synced');
+  assert.ok(!existsSync(bPath));
+  assert.equal(b.store.list().length, 0);
+  assert.equal(git(b.repo, 'status', '--porcelain'), '');
+});
+
+test('an offline deletion stays pending and is pushed on the next sync', () => {
+  const { a, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '離線刪除' });
+  archive(a.store, created.id);
+  git(a.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  assert.equal(a.store.delete(created.path, { reason: '離線刪除' }).sync.state, 'pending');
+  assert.ok(!existsSync(created.path));
+  git(a.repo, 'remote', 'set-url', 'origin', remote);
+  assert.equal(syncOnce(a.store).state, 'synced');
+  assert.ok(!git(remote, 'ls-tree', '-r', '--name-only', 'main').includes(created.id));
+  assert.equal(a.store.list().length, 0);
+});
+
+test('a deletion does not remove remote changes made after the last sync', () => {
+  const { a, b, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '刪除時遠端有更新' });
+  archive(a.store, created.id);
+  syncOnce(b.store);
+  git(a.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  a.store.delete(created.path, { reason: '想刪除' });
+  b.store.update(created.id, { expectedRevision: b.store.get(created.id).doc.revision, actor: 'ai', summary: '取消封存', operations: [{ op: 'unarchive' }] });
+  git(a.repo, 'remote', 'set-url', 'origin', remote);
+  const result = syncOnce(a.store);
+  assert.equal(result.state, 'conflict');
+  assert.ok(result.message.includes('刪除'));
+  assert.equal(readBoard(join(a.repo, 'boards', `${created.id}.html`)).archived, false);
+  assert.equal(a.store.get(created.id).doc.archived, false);
+  assert.ok(git(remote, 'ls-tree', '-r', '--name-only', 'main').includes(created.id));
+  assert.equal(syncOnce(a.store).state, 'synced');
+});
+
+test('a remote deletion keeps local changes that were not synced yet', () => {
+  const { a, b, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '遠端刪除但本機有修改' });
+  archive(a.store, created.id);
+  syncOnce(b.store);
+  const bPath = b.store.get(created.id).path;
+  git(b.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  b.store.update(created.id, { expectedRevision: readBoard(bPath).revision, actor: 'ai', summary: '取消封存', operations: [{ op: 'unarchive' }] });
+  a.store.delete(created.path, { reason: '刪除' });
+  git(b.repo, 'remote', 'set-url', 'origin', remote);
+  assert.equal(syncOnce(b.store).state, 'conflict');
+  assert.ok(existsSync(bPath));
+});
+
+test('a pending deletion is not registered again from the data repo', () => {
+  const { a, root } = fixture();
+  const created = a.store.create({ project: a.project, title: '待同步的刪除' });
+  archive(a.store, created.id);
+  git(a.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  a.store.delete(created.path, { reason: '刪除' });
+  assert.equal(setupSync(a.store).registered, 0);
+  assert.equal(a.store.list().length, 0);
+});
