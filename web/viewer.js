@@ -6,6 +6,7 @@
   let pageId = pages()[0].id;
   let connected = false;
   let filePath = '';
+  const expanded = new Set();
   const online = location.protocol !== 'file:' && /^\/boards\/[a-zA-Z0-9-]+$/.test(location.pathname);
   const kinds = { question: ['待釐清', 'help'], idea: ['想法', 'spark'], note: ['筆記', 'note'], consensus: ['共識', 'check'], decision: ['決策', 'branch'], action: ['下一步', 'arrow'] };
   const paths = {
@@ -19,7 +20,9 @@
     spark: '<path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     leaf: '<path d="M20 4C6 2 2 10 7 16s13 2 13-12zM5 21l10-12"/>',
-    chat: '<path d="M4 4h16v12H9l-5 4zM8 8h8M8 12h5"/>'
+    chat: '<path d="M4 4h16v12H9l-5 4zM8 8h8M8 12h5"/>',
+    expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'
   };
   const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.note}</svg>`;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -63,7 +66,8 @@
     let image;
     try { image = `<img src="${esc(svgUrl(diagram.svg))}" alt="${esc(diagram.title)}">`; }
     catch (error) { image = `<p class="form-error">${esc(error.message)}</p>`; }
-    return `<article class="diagram-card"><div class="card-heading"><h3>${esc(diagram.title)}</h3></div><div class="diagram-frame">${image}</div>${diagram.caption ? `<p class="caption">${esc(diagram.caption)}</p>` : ''}</article>`;
+    const wide = expanded.has(diagram.id);
+    return `<article class="diagram-card${wide ? ' expanded' : ''}"><div class="card-heading"><h3>${esc(diagram.title)}</h3><button type="button" class="icon-button expand-button" data-expand="${esc(diagram.id)}" aria-pressed="${wide}" title="${wide ? '還原圖的寬度' : '把圖展開到全寬'}">${icon(wide ? 'collapse' : 'expand')}<span>${wide ? '還原' : '全寬'}</span></button></div><div class="diagram-frame">${image}</div>${diagram.caption ? `<p class="caption">${esc(diagram.caption)}</p>` : ''}</article>`;
   }
   function noteHtml(item) {
     return `<article class="sticky ${esc(item.kind)} ${item.done ? 'done' : ''}"><div class="card-heading"><span class="note-type">${icon(kinds[item.kind][1])}${esc(kinds[item.kind][0])}</span></div><h3>${esc(item.title)}</h3><p class="note-text">${esc(item.text)}</p>${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}<div class="note-footer"><span>${item.kind === 'action' ? item.done ? '已完成' : '待進行' : item.confirmed ? '已釐清' : item.kind === 'question' ? '等待釐清' : '討論中'}</span><span>${date(item.updatedAt)}</span></div></article>`;
@@ -79,7 +83,8 @@
     const localDecisions = doc.items.filter(item => belongs(item) && ['consensus', 'decision'].includes(item.kind));
     const decisions = doc.items.filter(item => ['consensus', 'decision'].includes(item.kind));
     const questions = doc.items.filter(item => item.kind === 'question' && !item.confirmed);
-    return `<div class="workspace-grid"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${notes.length ? `<div class="notes-grid">${notes.map(noteHtml).join('')}</div>` : ''}${localDecisions.length ? `<div class="decisions-grid">${localDecisions.map(item => decisionHtml(item,true)).join('')}</div>` : ''}${!diagrams.length && !notes.length && !localDecisions.length ? `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${confirmed().length} 已確認</span></div>${decisions.length ? decisions.map(item => decisionHtml(item)).join('') : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><section class="side-panel"><div class="side-heading"><h2>${icon('help')}待釐清</h2><span class="side-count">${questions.length}</span></div>${questions.length ? `<div class="pending-list">${questions.map(item => `<div class="pending-item"><span class="pending-bullet"></span><span>${esc(item.title)}</span></div>`).join('')}</div>` : '<div class="empty">目前沒有待釐清的問題。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
+    const wide = diagrams.some(diagram => expanded.has(diagram.id));
+    return `<div class="workspace-grid${wide ? ' wide' : ''}"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${notes.length ? `<div class="notes-grid">${notes.map(noteHtml).join('')}</div>` : ''}${localDecisions.length ? `<div class="decisions-grid">${localDecisions.map(item => decisionHtml(item,true)).join('')}</div>` : ''}${!diagrams.length && !notes.length && !localDecisions.length ? `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${confirmed().length} 已確認</span></div>${decisions.length ? decisions.map(item => decisionHtml(item)).join('') : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><section class="side-panel"><div class="side-heading"><h2>${icon('help')}待釐清</h2><span class="side-count">${questions.length}</span></div>${questions.length ? `<div class="pending-list">${questions.map(item => `<div class="pending-item"><span class="pending-bullet"></span><span>${esc(item.title)}</span></div>`).join('')}</div>` : '<div class="empty">目前沒有待釐清的問題。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
   }
   function changeText(change) {
     const describe = value => typeof value === 'object' && value ? `${value.title || ''}\n${value.text || value.caption || value.topic || ''}${value.svg ? '\n［SVG 圖，完整內容保存在 HTML 資料中］' : ''}${value.confirmed !== undefined ? `\n${value.confirmed ? '已確認' : '待確認'}` : ''}` : String(value ?? '');
@@ -107,6 +112,17 @@
     } catch { /* Preserve the last rendered board during temporary disconnects. */ }
   }
   document.addEventListener('click', event => {
+    const toggle = event.target.closest('[data-expand]');
+    if (toggle) {
+      const id = toggle.dataset.expand;
+      const top = toggle.getBoundingClientRect?.().top;
+      if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
+      render();
+      // Keep the toggled diagram in place while the layout around it changes.
+      const moved = [...(document.querySelectorAll?.('[data-expand]') || [])].find(button => button.dataset.expand === id);
+      if (top !== undefined && moved) window.scrollBy(0, moved.getBoundingClientRect().top - top);
+      return;
+    }
     const page = event.target.closest('[data-page]');
     if (page) { pageId = page.dataset.page; view = 'board'; window.scrollTo(0, 0); render(); return; }
     const tab = event.target.closest('[data-view]');

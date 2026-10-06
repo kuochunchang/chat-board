@@ -295,3 +295,35 @@ test('read omits history unless asked, can omit SVG source, and diagram edits ke
   store.updateFile(path, update(lean.doc, [{ op: 'diagram', diagram: { ...diagram, caption: '只改圖說' } }]));
   assert.equal(readBoard(path).diagrams[0].svg, svg);
 });
+
+test('a diagram expands to the full width and back; the sidebar moves below while any diagram on the page is expanded', () => {
+  let doc = createDocument({ title: '全寬圖', project: '/tmp/project' });
+  doc = applyUpdate(doc, update(doc, [
+    { op: 'page', page: { id: 'notes', title: '另一塊白板' } },
+    { op: 'diagram', diagram: { id: 'flow', pageId: 'main', title: '複雜流程', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><text>流程</text></svg>' } },
+    { op: 'diagram', diagram: { id: 'other', pageId: 'main', title: '另一張圖', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300"><text>其他</text></svg>' } }
+  ]));
+  const html = renderDocument(doc);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const app = { innerHTML: '' }, handlers = new Map();
+  runInNewContext(script, {
+    document: { getElementById: id => id === 'app' ? app : { textContent: JSON.stringify(parseDocument(html)) }, addEventListener: (name, handler) => handlers.set(name, handler) },
+    location: { protocol: 'file:', pathname: '/discussion.html' },
+    window: { scrollY: 0, scrollTo() {}, scrollBy() {} }
+  });
+  const click = targets => handlers.get('click')({ target: { closest: selector => targets[selector] ?? null } });
+  const expanded = () => [...app.innerHTML.matchAll(/class="diagram-card( expanded)?"/g)].map(match => Boolean(match[1]));
+  assert.ok(app.innerHTML.includes('data-expand="flow"') && app.innerHTML.includes('aria-pressed="false"'));
+  assert.deepEqual(expanded(), [false, false]);
+  assert.ok(!app.innerHTML.includes('workspace-grid wide'));
+  click({ '[data-expand]': { dataset: { expand: 'flow' } } });
+  assert.deepEqual(expanded(), [true, false]);
+  assert.ok(app.innerHTML.includes('workspace-grid wide') && app.innerHTML.includes('aria-pressed="true"'));
+  click({ '[data-page]': { dataset: { page: 'notes' } } });
+  assert.ok(!app.innerHTML.includes('workspace-grid wide'));
+  click({ '[data-page]': { dataset: { page: 'main' } } });
+  assert.deepEqual(expanded(), [true, false]);
+  click({ '[data-expand]': { dataset: { expand: 'flow' } } });
+  assert.deepEqual(expanded(), [false, false]);
+  assert.ok(!app.innerHTML.includes('workspace-grid wide'));
+});
