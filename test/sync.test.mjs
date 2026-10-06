@@ -81,6 +81,86 @@ test('offline saves survive and independent changes merge with both histories', 
   assert.deepEqual(readBoard(created.path), merged);
 });
 
+// Simulate a previously synchronized local tip that is no longer on remote main.
+function retainDivergentTip(machine, remote) {
+  for (const entry of machine.store.entries()) {
+    writeFileSync(join(machine.repo, 'boards', `${entry.id}.html`), readFileSync(entry.path));
+  }
+  git(machine.repo, 'add', 'boards'); git(machine.repo, 'commit', '-m', 'previous local sync');
+  const tip = git(machine.repo, 'rev-parse', 'main');
+  git(machine.repo, 'update-ref', 'refs/remotes/origin/main', tip);
+  git(machine.repo, 'remote', 'set-url', 'origin', remote);
+  return tip;
+}
+
+test('divergent tracking refs recover and independent branch edits retain both histories', () => {
+  const { a, b, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '分支分歧：不同項目' });
+  syncOnce(b.store);
+  const bPath = b.store.get(created.id).path;
+  git(b.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  const offline = b.store.update(created.id, change(readBoard(bPath), 'b', '本機分支的 B'));
+  const online = a.store.update(created.id, change(readBoard(created.path), 'a', '遠端分支的 A'));
+  const remoteBefore = git(remote, 'rev-parse', 'main');
+  const localTip = retainDivergentTip(b, remote);
+  const result = syncOnce(b.store);
+  assert.equal(result.state, 'synced', result.message);
+  assert.notEqual(git(b.repo, 'merge-base', localTip, remoteBefore), localTip);
+  assert.equal(git(b.repo, 'rev-parse', 'refs/remotes/origin/main'), result.commit);
+  const merged = readBoard(bPath);
+  assert.deepEqual(new Set(merged.items.map(item => item.id)), new Set(['a', 'b']));
+  for (const entry of [...offline.doc.history, ...online.doc.history]) {
+    assert.ok(merged.history.some(value => value.id === entry.id));
+  }
+  assert.equal(git(remote, 'merge-base', remoteBefore, result.commit), remoteBefore);
+  assert.equal(git(remote, 'merge-base', localTip, result.commit), localTip);
+  assert.equal(git(b.repo, 'status', '--porcelain'), '');
+  assert.equal(syncOnce(b.store).commit, result.commit);
+});
+
+test('divergent branches with same-item edits preserve local HTML and remote main', () => {
+  const { a, b, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '分支分歧：同項目衝突' });
+  a.store.update(created.id, change(readBoard(created.path), 'shared', '原文'));
+  syncOnce(b.store);
+  const bPath = b.store.get(created.id).path;
+  git(b.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  b.store.update(created.id, change(readBoard(bPath), 'shared', '本機的 B'));
+  const localHtml = readFileSync(bPath, 'utf8');
+  a.store.update(created.id, change(readBoard(created.path), 'shared', '遠端的 A'));
+  const remoteBefore = git(remote, 'rev-parse', 'main');
+  const localTip = retainDivergentTip(b, remote);
+  const result = syncOnce(b.store);
+  assert.equal(result.state, 'conflict', result.message);
+  assert.ok(result.backupBranch);
+  assert.equal(readFileSync(bPath, 'utf8'), localHtml);
+  assert.equal(git(b.repo, 'rev-parse', 'main'), localTip);
+  assert.equal(git(remote, 'rev-parse', 'main'), remoteBefore);
+  assert.ok(git(remote, 'show', `${result.backupBranch}:boards/${created.id}.html`).includes('本機的 B'));
+});
+
+test('divergent Git commits accept a remote HTML successor with the complete local history', () => {
+  const { a, b, root, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: 'HTML 歷史連續' });
+  syncOnce(b.store);
+  git(b.repo, 'remote', 'set-url', 'origin', join(root, 'offline.git'));
+  const updated = a.store.update(created.id, change(readBoard(created.path), 'shared', 'A 第一版'));
+  const bPath = b.store.get(created.id).path;
+  // Same document and history, different Git commit caused by a viewer change.
+  writeFileSync(bPath, readFileSync(updated.path, 'utf8').replace(/<style>[\s\S]*?<\/style>/, '<style>/* old viewer */</style>'));
+  git(b.repo, 'add', '.'); git(b.repo, 'commit', '-m', 'local copy with another viewer');
+  const localTip = git(b.repo, 'rev-parse', 'main');
+  git(b.repo, 'update-ref', 'refs/remotes/origin/main', localTip);
+  const next = a.store.update(created.id, change(readBoard(created.path), 'shared', 'A 第二版'));
+  git(b.repo, 'remote', 'set-url', 'origin', remote);
+  const result = syncOnce(b.store);
+  assert.equal(result.state, 'synced', result.message);
+  assert.deepEqual(readBoard(bPath), next.doc);
+  assert.equal(git(remote, 'merge-base', next.sync.commit, result.commit), next.sync.commit);
+  assert.equal(git(remote, 'merge-base', localTip, result.commit), localTip);
+  assert.equal(syncOnce(b.store).commit, result.commit);
+});
+
 test('same-item conflicts preserve local HTML and remote main, and upload a backup only once', () => {
   const { a, b, root, remote } = fixture();
   const created = a.store.create({ project: a.project, title: '衝突保護' });
