@@ -327,3 +327,39 @@ test('a diagram expands to the full width and back; the sidebar moves below whil
   assert.deepEqual(expanded(), [false, false]);
   assert.ok(!app.innerHTML.includes('workspace-grid wide'));
 });
+
+test('decisions are listed newest first by confirmation time, or by proposal time while pending', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-01T00:00:00.000Z') });
+  let doc = createDocument({ title: '決策排序', project: '/tmp/project' });
+  const at = (time, operations, reason) => { t.mock.timers.setTime(Date.parse(time)); doc = applyUpdate(doc, update(doc, operations, reason ? { reason } : {})); };
+  const item = id => doc.items.find(value => value.id === id);
+  at('2026-10-01T01:00:00.000Z', [
+    { op: 'page', page: { id: 'notes', title: '另一塊白板' } },
+    { op: 'upsert', item: { id: 'first', kind: 'decision', title: '最先提出、最後確認' } },
+    { op: 'upsert', item: { id: 'second', kind: 'consensus', title: '先確認的共識' } },
+    { op: 'upsert', item: { id: 'third', kind: 'decision', title: '仍待確認' } }
+  ]);
+  at('2026-10-01T05:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: true } }], '使用者第一次確認。');
+  at('2026-10-02T01:00:00.000Z', [{ op: 'upsert', item: { ...item('second'), confirmed: true } }], '使用者確認共識。');
+  at('2026-10-02T03:00:00.000Z', [{ op: 'upsert', item: { id: 'legacy', kind: 'decision', pageId: 'notes', title: '沒有確認紀錄的決策', confirmed: true } }], '使用者確認另一塊白板的決策。');
+  at('2026-10-02T06:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: false } }]);
+  at('2026-10-03T01:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: true } }], '使用者重新確認。');
+  doc.history.find(entry => entry.changes.some(change => change.after?.id === 'legacy')).changes = [];
+  const html = renderDocument(doc);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const app = { innerHTML: '' };
+  runInNewContext(script, {
+    document: { getElementById: id => id === 'app' ? app : { textContent: JSON.stringify(parseDocument(html)) }, addEventListener() {} },
+    location: { protocol: 'file:', pathname: '/discussion.html' },
+    window: { scrollY: 0, scrollTo() {} }
+  });
+  const time = (value, label) => `${new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))} ${label}`;
+  const cards = name => [...app.innerHTML.matchAll(new RegExp(`<article class="${name}">([\\s\\S]*?)</article>`, 'g'))].map(([, card]) => [card.match(/<h3>(.*?)<\/h3>/)[1], card.match(/<time[^>]*>(.*?)<\/time>/)?.[1]]);
+  assert.deepEqual(cards('decision'), [
+    ['最先提出、最後確認', time('2026-10-03T01:00:00.000Z', '確認')],
+    ['沒有確認紀錄的決策', time('2026-10-02T03:00:00.000Z', '確認')],
+    ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')],
+    ['仍待確認', time('2026-10-01T01:00:00.000Z', '提出')]
+  ]);
+  assert.deepEqual(cards('decision-full').map(([title]) => title), ['最先提出、最後確認', '先確認的共識', '仍待確認']);
+});
