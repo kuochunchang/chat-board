@@ -26,6 +26,11 @@ node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確�
 read 預設不輸出討論脈絡（history），並在 omitted 標示省略的筆數；需要時加 --history。--no-svg 省略圖的 SVG 原始碼；只改圖的標題或圖說時，update 沿用原本的 SVG。
 可加 --revision N 避免覆蓋別人的新更新；update 的 JSON 必須包含 expectedRevision。
 合併分頁：先在同一份 update 搬移筆記與圖，再以 {"op":"remove","target":"page","id":"來源頁 ID"} 移除空頁，並提供 reason。至少保留一頁。
+濃縮整理（完整規則見本工具 AGENTS.md 的 Consolidating a discussion）：
+- 只在使用者要求或同意時整理。某塊白板超過約 20 個項目，或新的決策取代既有提案時，可以在 chat 提議。
+- 合併重複的項目，沿用代表項目的 ID。移除被已確認決策取代的提案。問題的答案併入相關項目後，移除問題。同一主題已完成的下一步合併為一項。
+- 不撤回或改變已確認的內容，不新增結論。
+- 一次 update 只整理一塊白板。在 reason 記下合併對照與移除原因，最後加 checkpoint。
 封存：list 預設不列出已封存的討論，加 --all 才列出。已封存的討論要先 unarchive 才能更新。
 刪除：只能刪除已封存的討論，並需要 --reason。有設定同步時，刪除會提交到資料 repo，內容保留在 Git 歷史。
 伺服器：npm start（預設 http://127.0.0.1:4317）
