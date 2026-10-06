@@ -40,6 +40,23 @@
         if (!attrs.has(name) || external || ((name === 'href' || name === 'xlink:href') && !/^#[a-zA-Z0-9_.:-]+$/.test(value))) element.removeAttribute(attr.name);
       }
     }
+    const root = parsed.documentElement;
+    const viewBox = root.getAttribute('viewbox') || root.getAttribute('viewBox');
+    if (viewBox) {
+      const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+      if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+        if (!root.hasAttribute('width') || root.getAttribute('width') === '100%') root.setAttribute('width', String(parts[2]));
+        if (!root.hasAttribute('height') || root.getAttribute('height') === '100%') root.setAttribute('height', String(parts[3]));
+      }
+    }
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      if (el.hasAttribute('font-size')) {
+        const val = parseFloat(el.getAttribute('font-size'));
+        if (!isNaN(val) && val > 16) {
+          el.setAttribute('font-size', String(Math.round((16 + (val - 16) * 0.35) * 10) / 10));
+        }
+      }
+    }
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(parsed.documentElement))}`;
   }
   function diagramHtml(diagram) {
@@ -91,9 +108,9 @@
   }
   document.addEventListener('click', event => {
     const page = event.target.closest('[data-page]');
-    if (page) { pageId = page.dataset.page; view = 'board'; render(); return; }
+    if (page) { pageId = page.dataset.page; view = 'board'; window.scrollTo(0, 0); render(); return; }
     const tab = event.target.closest('[data-view]');
-    if (tab) { view = tab.dataset.view; render(); }
+    if (tab) { view = tab.dataset.view; window.scrollTo(0, 0); render(); }
   });
   render();
   if (online) {

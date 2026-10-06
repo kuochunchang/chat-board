@@ -17,7 +17,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 - Discussion HTML belongs in the discussed project's `docs/discussions/` by default. The tool can operate across directories using `--project` and `--file`.
 - When the user selects centralized data storage (`sync init --storage repo`), new discussion HTML belongs in the configured data repo's `boards/`. Preserve the discussed project's metadata and source paths. An explicit `--file` takes precedence.
 - Updating a discussion record does not authorize changing the discussed project's source code.
-- Prefer illustrated explanations: use a diagram to show the outline and overall structure, then place detailed text below it. Keep diagram labels and text consistent.
+- Prefer illustrated explanations: use a diagram to show the outline and overall structure, then place detailed text below it. Keep diagram labels and text consistent. Maintain proportional typography in SVGs (titles 16-18px, node headers 14-15px, body text 12-13px on an 800-1000 wide viewBox); avoid oversized headings (>20px) inside SVGs to keep visual balance with whiteboard notes.
 - When GitHub sync is configured, inspect `sync.state` after a CLI write. A saved HTML does not imply a successful push. Report pending uploads or conflicts in chat; preserve both versions and confirmation reasons.
 
 ## Clear technical writing
