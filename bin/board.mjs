@@ -7,7 +7,7 @@ const help = `共板：HTML 就是討論紀錄。所有指令輸出 JSON，供 A
 
 node bin/board.mjs new --project /path/to/project --title "討論主題" [--topic "目標"] [--file docs/discussions/name.html]
 node bin/board.mjs list [--all]
-node bin/board.mjs read --file /path/to/record.html
+node bin/board.mjs read --file /path/to/record.html [--history] [--no-svg]
 node bin/board.mjs open --file /path/to/record.html
 node bin/board.mjs update --file /path/to/record.html --input /path/to/update.json
 node bin/board.mjs update --file /path/to/record.html --input - < update.json
@@ -23,6 +23,7 @@ node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"]
 node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確要求刪除的原因" [--revision N]
 
 可用 kind：${KINDS.join(', ')}
+read 預設不輸出討論脈絡（history），並在 omitted 標示省略的筆數；需要時加 --history。--no-svg 省略圖的 SVG 原始碼；只改圖的標題或圖說時，update 沿用原本的 SVG。
 可加 --revision N 避免覆蓋別人的新更新；update 的 JSON 必須包含 expectedRevision。
 合併分頁：先在同一份 update 搬移筆記與圖，再以 {"op":"remove","target":"page","id":"來源頁 ID"} 移除空頁，並提供 reason。至少保留一頁。
 封存：list 預設不列出已封存的討論，加 --all 才列出。已封存的討論要先 unarchive 才能更新。
@@ -37,7 +38,7 @@ function argumentsOf(args) {
     const arg = args[index];
     if (!arg.startsWith('--')) throw new BoardError(`未知的參數：${arg}`);
     const name = arg.slice(2);
-    if (['confirmed','help','all'].includes(name)) { options[name] = true; continue; }
+    if (['confirmed','help','all','history','no-svg'].includes(name)) { options[name] = true; continue; }
     if (args[index + 1] === undefined || args[index + 1].startsWith('--')) throw new BoardError(`--${name} 需要值。`);
     options[name] = args[++index];
   }
@@ -57,7 +58,13 @@ try {
       if (!options.file) throw new BoardError('需要 --file 指定 HTML 紀錄。');
       const file = resolve(options.file);
       const doc = readBoard(file);
-      if (command === 'read') result = { path: file, doc };
+      if (command === 'read') {
+        const view = { ...doc };
+        const omitted = {};
+        if (!options.history) { delete view.history; omitted.history = doc.history.length; }
+        if (options['no-svg']) { view.diagrams = doc.diagrams.map(({ svg, ...diagram }) => diagram); omitted.svg = doc.diagrams.length; }
+        result = { path: file, doc: view, ...(Object.keys(omitted).length ? { omitted } : {}) };
+      }
       else if (command === 'delete') result = store.delete(file, { reason: options.reason, revision: options.revision });
       else if (command === 'open') result = store.register(file);
       else {

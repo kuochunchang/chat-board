@@ -274,3 +274,24 @@ test('a lock left by an exited process or an old empty lock is taken over; a liv
   }
   assert.deepEqual(readdirSync(root), []);
 });
+
+test('read omits history unless asked, can omit SVG source, and diagram edits keep the SVG', () => {
+  const { store, path } = fixture();
+  const cli = new URL('../bin/board.mjs', import.meta.url).pathname;
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>流程</text></svg>';
+  store.updateFile(path, update(readBoard(path), [{ op: 'diagram', diagram: { id: 'flow', title: '流程', svg } }]));
+  const read = (...args) => JSON.parse(spawnSync(process.execPath, [cli, 'read', '--file', path, '--registry', store.registry, ...args], { encoding: 'utf8' }).stdout);
+  const compact = read();
+  assert.equal(compact.doc.history, undefined);
+  assert.equal(compact.omitted.history, 2);
+  assert.equal(compact.doc.diagrams[0].svg, svg);
+  const full = read('--history');
+  assert.equal(full.doc.history.length, 2);
+  assert.equal(full.omitted, undefined);
+  const lean = read('--no-svg');
+  assert.equal(lean.doc.diagrams[0].svg, undefined);
+  assert.equal(lean.omitted.svg, 1);
+  const { svg: omitted, ...diagram } = lean.doc.diagrams[0];
+  store.updateFile(path, update(lean.doc, [{ op: 'diagram', diagram: { ...diagram, caption: '只改圖說' } }]));
+  assert.equal(readBoard(path).diagrams[0].svg, svg);
+});

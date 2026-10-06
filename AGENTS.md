@@ -7,7 +7,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 ## Discussing this project
 
 - When the discussion makes progress, proactively update its HTML whiteboard through `node bin/board.mjs`.
-- Reuse the current discussion record rather than creating a new board for every turn. Find it with `node bin/board.mjs list` and read it before updating.
+- Reuse the current discussion record rather than creating a new board for every turn. Find it with `node bin/board.mjs list` and read it before updating. `read` omits history by default and reports the omitted count in `omitted`; add `--history` only when you need previous content, and `--no-svg` when you do not need diagram source.
 - A discussion can use multiple whiteboards inside one HTML. Add or rename them with the `page` operation, and assign notes and diagrams with `pageId`. Keep IDs stable; use tabs only to change the viewing page.
 - When consolidating a discussion, consolidate its pages too. Move notes and diagrams to retained page IDs, then remove empty pages with `{"op":"remove","target":"page","id":"source-page"}` in the same update. Provide a reason; keep at least one page. Previous content and page metadata remain in history.
 - Keep proposals, open questions, notes, explicit consensus, decisions, and actions distinct.
