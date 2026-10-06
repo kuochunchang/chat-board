@@ -23,6 +23,7 @@ node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"]
 node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確要求刪除的原因" [--revision N]
 
 可用 kind：${KINDS.join(', ')}
+在 chat 等使用者決定或回答時，同時新增 kind 為 question 的項目，讓它出現在白板最上方的「待確認事項」。使用者回覆後，把答案記入相關項目，再移除這個問題。
 read 預設不輸出討論脈絡（history），並在 omitted 標示省略的筆數；需要時加 --history。--no-svg 省略圖的 SVG 原始碼；只改圖的標題或圖說時，update 沿用原本的 SVG。
 可加 --revision N 避免覆蓋別人的新更新；update 的 JSON 必須包含 expectedRevision。
 合併分頁：先在同一份 update 搬移筆記與圖，再以 {"op":"remove","target":"page","id":"來源頁 ID"} 移除空頁，並提供 reason。至少保留一頁。

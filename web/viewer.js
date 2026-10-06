@@ -7,6 +7,7 @@
   let connected = false;
   let filePath = '';
   const expanded = new Set();
+  const opened = new Set();
   const online = location.protocol !== 'file:' && /^\/boards\/[a-zA-Z0-9-]+$/.test(location.pathname);
   const kinds = { question: ['待釐清', 'help'], idea: ['想法', 'spark'], note: ['筆記', 'note'], consensus: ['共識', 'check'], decision: ['決策', 'branch'], action: ['下一步', 'arrow'] };
   const paths = {
@@ -22,12 +23,15 @@
     leaf: '<path d="M20 4C6 2 2 10 7 16s13 2 13-12zM5 21l10-12"/>',
     chat: '<path d="M4 4h16v12H9l-5 4zM8 8h8M8 12h5"/>',
     expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
-    collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'
+    collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+    chevron: '<path d="m9 6 6 6-6 6"/>'
   };
   const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.note}</svg>`;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const date = value => new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
   const confirmed = () => doc.items.filter(item => ['consensus', 'decision'].includes(item.kind) && item.confirmed);
+  const isDecision = item => ['consensus', 'decision'].includes(item.kind);
+  const groups = [['想法', item => item.kind === 'idea'], ['筆記', item => item.kind === 'note'], ['下一步', item => item.kind === 'action'], ['已釐清的問題', item => item.kind === 'question'], ['共識與決策', isDecision]];
 
   // Render SVG as a self-contained image, with no scripts or external resources.
   function svgUrl(source) {
@@ -69,11 +73,36 @@
     const wide = expanded.has(diagram.id);
     return `<article class="diagram-card${wide ? ' expanded' : ''}"><div class="card-heading"><h3>${esc(diagram.title)}</h3><button type="button" class="icon-button expand-button" data-expand="${esc(diagram.id)}" aria-pressed="${wide}" title="${wide ? '還原圖的寬度' : '把圖展開到全寬'}">${icon(wide ? 'collapse' : 'expand')}<span>${wide ? '還原' : '全寬'}</span></button></div><div class="diagram-frame">${image}</div>${diagram.caption ? `<p class="caption">${esc(diagram.caption)}</p>` : ''}</article>`;
   }
-  function noteHtml(item) {
-    return `<article class="sticky ${esc(item.kind)} ${item.done ? 'done' : ''}"><div class="card-heading"><span class="note-type">${icon(kinds[item.kind][1])}${esc(kinds[item.kind][0])}</span></div><h3>${esc(item.title)}</h3><p class="note-text">${esc(item.text)}</p>${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}<div class="note-footer"><span>${item.kind === 'action' ? item.done ? '已完成' : '待進行' : item.confirmed ? '已釐清' : item.kind === 'question' ? '等待釐清' : '討論中'}</span><span>${date(item.updatedAt)}</span></div></article>`;
+  function itemToggle(key, item, label = '') {
+    return `<button type="button" class="item-toggle" data-toggle="${esc(key)}" aria-expanded="${opened.has(key)}">${icon('chevron')}${label}<span class="item-title">${esc(item.title)}</span></button>`;
   }
-  function decisionHtml(item, time, full = false) {
-    return `<article class="${full ? 'decision-full' : 'decision'}"><div class="decision-meta"><span class="badge ${item.confirmed ? '' : 'pending'}">${item.confirmed ? icon('check') : ''}${item.confirmed ? '已確認' : '待確認'} · ${esc(kinds[item.kind][0])}</span><time class="decision-time" datetime="${esc(time)}">${date(time)} ${item.confirmed ? '確認' : '提出'}</time></div><h3>${esc(item.title)}</h3><p>${esc(item.text)}</p>${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}</article>`;
+  function itemBody(item) {
+    const badge = item.confirmed && isDecision(item) ? `<span class="badge">${icon('check')}已確認 · ${esc(kinds[item.kind][0])}</span>` : '';
+    return `<div class="item-body">${badge}${item.text ? `<p>${esc(item.text)}</p>` : ''}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}</div>`;
+  }
+  function attentionHtml(pending, time) {
+    const title = id => esc((pages().find(page => page.id === id) || pages()[0]).title);
+    const row = item => {
+      const key = `attention:${item.id}`, itemPage = item.pageId || pages()[0].id;
+      const label = `<span class="badge pending">${item.kind === 'question' ? '待釐清' : `待確認 · ${esc(kinds[item.kind][0])}`}</span>`;
+      const where = itemPage === pageId ? `<span class="page-link current">${title(itemPage)}</span>` : `<button type="button" class="page-link" data-page="${esc(itemPage)}">${icon('arrow')}${title(itemPage)}</button>`;
+      return `<li class="attention-item">${itemToggle(key, item, label)}<div class="item-meta"><time datetime="${esc(time(item))}">${date(time(item))} 提出</time>${where}</div>${opened.has(key) ? itemBody(item) : ''}</li>`;
+    };
+    return `<section class="attention" aria-label="待確認事項"><div class="side-heading"><h2>${icon('help')}待確認事項</h2><span class="side-count">${pending.length}</span></div>${pending.length ? `<ul class="attention-list">${pending.map(row).join('')}</ul>` : '<p class="attention-empty">目前沒有待確認事項。</p>'}</section>`;
+  }
+  function detailsHtml(items, time) {
+    const key = `details:${pageId}`;
+    const filled = groups.map(([label, test]) => [label, items.filter(test)]).filter(([, list]) => list.length);
+    const row = item => {
+      const cardKey = `card:${item.id}`;
+      const status = item.kind === 'action' ? `<span class="item-status">${item.done ? '已完成' : '待進行'}</span>` : isDecision(item) ? `<time class="item-status" datetime="${esc(time(item))}">${date(time(item))} 確認</time>` : '';
+      return `<li class="detail-item${item.done ? ' done' : ''}"><div class="detail-row">${itemToggle(cardKey, item)}${status}</div>${opened.has(cardKey) ? itemBody(item) : ''}</li>`;
+    };
+    return `<section class="details"><button type="button" class="details-toggle" data-toggle="${esc(key)}" aria-expanded="${opened.has(key)}">${icon('chevron')}<span class="details-title">細節（${items.length} 張）</span><span class="details-summary">${filled.map(([label, list]) => `${label} ${list.length}`).join(' · ')}</span></button>${opened.has(key) ? `<div class="details-body">${filled.map(([label, list]) => `<div class="detail-group"><h3>${label}（${list.length}）</h3><ul class="detail-list">${list.map(row).join('')}</ul></div>`).join('')}</div>` : ''}</section>`;
+  }
+  function decisionHtml(item, time) {
+    const key = `side:${item.id}`;
+    return `<li class="decision">${itemToggle(key, item)}<time class="decision-time" datetime="${esc(time)}">${date(time)} 確認</time>${opened.has(key) ? itemBody(item) : ''}</li>`;
   }
   function decisionTimes() {
     const confirmedAt = new Map();
@@ -84,14 +113,14 @@
     const belongs = item => (item.pageId || pages()[0].id) === pageId;
     const page = pages().find(page => page.id === pageId) || pages()[0];
     const diagrams = doc.diagrams.filter(belongs);
-    const notes = doc.items.filter(item => belongs(item) && !['consensus', 'decision'].includes(item.kind));
     const decisionTime = decisionTimes();
     const newestFirst = list => list.sort((a, b) => Date.parse(decisionTime(a)) - Date.parse(decisionTime(b))).reverse();
-    const localDecisions = newestFirst(doc.items.filter(item => belongs(item) && ['consensus', 'decision'].includes(item.kind)));
-    const decisions = newestFirst(doc.items.filter(item => ['consensus', 'decision'].includes(item.kind)));
-    const questions = doc.items.filter(item => item.kind === 'question' && !item.confirmed);
+    const pending = newestFirst(doc.items.filter(item => !item.confirmed && (item.kind === 'question' || isDecision(item))));
+    const local = doc.items.filter(item => belongs(item) && !pending.includes(item));
+    const details = [...local.filter(item => !isDecision(item)), ...newestFirst(local.filter(isDecision))];
+    const decisions = newestFirst(confirmed());
     const wide = diagrams.some(diagram => expanded.has(diagram.id));
-    return `<div class="workspace-grid${wide ? ' wide' : ''}"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${notes.length ? `<div class="notes-grid">${notes.map(noteHtml).join('')}</div>` : ''}${localDecisions.length ? `<div class="decisions-grid">${localDecisions.map(item => decisionHtml(item, decisionTime(item), true)).join('')}</div>` : ''}${!diagrams.length && !notes.length && !localDecisions.length ? `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${confirmed().length} 已確認</span></div>${decisions.length ? decisions.map(item => decisionHtml(item, decisionTime(item))).join('') : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><section class="side-panel"><div class="side-heading"><h2>${icon('help')}待釐清</h2><span class="side-count">${questions.length}</span></div>${questions.length ? `<div class="pending-list">${questions.map(item => `<div class="pending-item"><span class="pending-bullet"></span><span>${esc(item.title)}</span></div>`).join('')}</div>` : '<div class="empty">目前沒有待釐清的問題。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
+    return `<div class="workspace-grid${wide ? ' wide' : ''}"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${attentionHtml(pending, decisionTime)}${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${details.length ? detailsHtml(details, decisionTime) : ''}${!diagrams.length && !details.length ? `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${decisions.length} 已確認</span></div>${decisions.length ? `<ul class="decision-list">${decisions.map(item => decisionHtml(item, decisionTime(item))).join('')}</ul>` : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
   }
   function changeText(change) {
     const describe = value => typeof value === 'object' && value ? `${value.title || ''}\n${value.text || value.caption || value.topic || ''}${value.svg ? '\n［SVG 圖，完整內容保存在 HTML 資料中］' : ''}${value.confirmed !== undefined ? `\n${value.confirmed ? '已確認' : '待確認'}` : ''}` : String(value ?? '');
@@ -118,18 +147,20 @@
       render();
     } catch { /* Preserve the last rendered board during temporary disconnects. */ }
   }
+  // Keep the clicked control in place while the layout around it changes.
+  function toggleInPlace(control, name, set) {
+    const value = control.dataset[name];
+    const top = control.getBoundingClientRect?.().top;
+    if (set.has(value)) set.delete(value); else set.add(value);
+    render();
+    const moved = [...(document.querySelectorAll?.(`[data-${name}]`) || [])].find(element => element.dataset[name] === value);
+    if (top !== undefined && moved) window.scrollBy(0, moved.getBoundingClientRect().top - top);
+  }
   document.addEventListener('click', event => {
-    const toggle = event.target.closest('[data-expand]');
-    if (toggle) {
-      const id = toggle.dataset.expand;
-      const top = toggle.getBoundingClientRect?.().top;
-      if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
-      render();
-      // Keep the toggled diagram in place while the layout around it changes.
-      const moved = [...(document.querySelectorAll?.('[data-expand]') || [])].find(button => button.dataset.expand === id);
-      if (top !== undefined && moved) window.scrollBy(0, moved.getBoundingClientRect().top - top);
-      return;
-    }
+    const expand = event.target.closest('[data-expand]');
+    if (expand) { toggleInPlace(expand, 'expand', expanded); return; }
+    const toggle = event.target.closest('[data-toggle]');
+    if (toggle) { toggleInPlace(toggle, 'toggle', opened); return; }
     const page = event.target.closest('[data-page]');
     if (page) { pageId = page.dataset.page; view = 'board'; window.scrollTo(0, 0); render(); return; }
     const tab = event.target.closest('[data-view]');

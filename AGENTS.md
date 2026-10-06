@@ -11,6 +11,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
 - A discussion can use multiple whiteboards inside one HTML. Add or rename them with the `page` operation, and assign notes and diagrams with `pageId`. Keep IDs stable; use tabs only to change the viewing page.
 - Keep proposals, open questions, notes, explicit consensus, decisions, and actions distinct.
 - Do not treat silence, a new topic, or a suggestion as approval. Mark an item confirmed only when the user explicitly confirms it. Record the evidence in `reason`.
+- When you wait in chat for the user's decision or answer, also add an open `question` item, so it appears in 待確認事項 at the top of the whiteboard. After the user answers, record the answer in the related item, then remove the question.
 - Archive a discussion with `archive` to hide it from `list` and the library grid; `list --all` shows archived discussions. Delete only when the user explicitly asks. `delete` accepts only archived discussions and requires `--reason`; with sync configured, the deletion is committed to the data repo and the content stays in Git history.
 - Preserve item IDs. Supply the revision you just read and use incremental operations. On a conflict, read the current document and reconcile; never force an old revision over new content.
 - Preserve decision reasons and previous content in history. Include source paths when discussing another project's files.

@@ -18,6 +18,18 @@ function fixture() {
   return { root, project, store, ...result };
 }
 const update = (doc, operations, extra = {}) => ({ expectedRevision: doc.revision, actor: 'ai', summary: '整理進展', operations, ...extra });
+function renderViewer(doc) {
+  const html = renderDocument(doc);
+  const app = { innerHTML: '' }, handlers = new Map();
+  runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    document: { getElementById: id => id === 'app' ? app : { textContent: JSON.stringify(parseDocument(html)) }, addEventListener: (name, handler) => handlers.set(name, handler) },
+    location: { protocol: 'file:', pathname: '/discussion.html' },
+    window: { scrollY: 0, scrollTo() {}, scrollBy() {} }
+  });
+  const click = targets => handlers.get('click')({ target: { closest: selector => targets[selector] ?? null } });
+  const part = (start, end) => { const html = app.innerHTML, from = html.indexOf(start); return from < 0 ? '' : html.slice(from, end ? html.indexOf(end, from) : undefined); };
+  return { app, click, part };
+}
 
 test('the HTML alone round-trips text, SVG, history and script-like content', () => {
   let doc = createDocument({ title: 'A < B & C', project: '/tmp/project' });
@@ -164,9 +176,14 @@ test('standalone HTML can render and switch whiteboards without the server or ne
     fetch(){ networkCalls++; throw new Error('No network in standalone HTML'); },
     EventSource:class { constructor(){ networkCalls++; throw new Error('No server in standalone HTML'); } }
   });
+  const click = targets => handlers.get('click')({ target:{ closest: selector => targets[selector] ?? null } });
+  assert.ok(app.innerHTML.includes('目前沒有待確認事項'));
+  assert.ok(app.innerHTML.includes('細節（1 張）') && !app.innerHTML.includes('第一塊的筆記'));
+  click({ '[data-toggle]': { dataset:{ toggle:'details:main' } } });
   assert.ok(app.innerHTML.includes('第一塊的筆記') && !app.innerHTML.includes('第二塊的筆記'));
   assert.ok(!app.innerHTML.includes('data-page="old"'));
-  handlers.get('click')({ target:{ closest: selector => selector === '[data-page]' ? { dataset:{ page:'notes' } } : null } });
+  click({ '[data-page]': { dataset:{ page:'notes' } } });
+  click({ '[data-toggle]': { dataset:{ toggle:'details:notes' } } });
   assert.ok(app.innerHTML.includes('第二塊的筆記') && !app.innerHTML.includes('第一塊的筆記'));
   assert.equal(networkCalls, 0);
 });
@@ -345,21 +362,63 @@ test('decisions are listed newest first by confirmation time, or by proposal tim
   at('2026-10-02T06:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: false } }]);
   at('2026-10-03T01:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: true } }], '使用者重新確認。');
   doc.history.find(entry => entry.changes.some(change => change.after?.id === 'legacy')).changes = [];
-  const html = renderDocument(doc);
-  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  const app = { innerHTML: '' };
-  runInNewContext(script, {
-    document: { getElementById: id => id === 'app' ? app : { textContent: JSON.stringify(parseDocument(html)) }, addEventListener() {} },
-    location: { protocol: 'file:', pathname: '/discussion.html' },
-    window: { scrollY: 0, scrollTo() {} }
-  });
+  const { click, part } = renderViewer(doc);
   const time = (value, label) => `${new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))} ${label}`;
-  const cards = name => [...app.innerHTML.matchAll(new RegExp(`<article class="${name}">([\\s\\S]*?)</article>`, 'g'))].map(([, card]) => [card.match(/<h3>(.*?)<\/h3>/)[1], card.match(/<time[^>]*>(.*?)<\/time>/)?.[1]]);
-  assert.deepEqual(cards('decision'), [
+  const rows = (html, name) => [...html.matchAll(new RegExp(`<li class="${name}[^"]*">([\\s\\S]*?)</li>`, 'g'))].map(([, row]) => [row.match(/<span class="item-title">(.*?)<\/span>/)[1], row.match(/<time[^>]*>(.*?)<\/time>/)?.[1]]);
+  assert.deepEqual(rows(part('<aside class="sidebar">'), 'decision'), [
     ['最先提出、最後確認', time('2026-10-03T01:00:00.000Z', '確認')],
     ['沒有確認紀錄的決策', time('2026-10-02T03:00:00.000Z', '確認')],
-    ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')],
-    ['仍待確認', time('2026-10-01T01:00:00.000Z', '提出')]
+    ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')]
   ]);
-  assert.deepEqual(cards('decision-full').map(([title]) => title), ['最先提出、最後確認', '先確認的共識', '仍待確認']);
+  assert.deepEqual(rows(part('<section class="attention"', '</section>'), 'attention-item'), [['仍待確認', time('2026-10-01T01:00:00.000Z', '提出')]]);
+  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
+  assert.deepEqual(rows(part('<section class="details"', '</section>'), 'detail-item'), [
+    ['最先提出、最後確認', time('2026-10-03T01:00:00.000Z', '確認')],
+    ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')]
+  ]);
+});
+
+test('pending items come first, other cards fold into details, and the sidebar lists only confirmed decisions', () => {
+  let doc = createDocument({ title: '閱讀動線', project: '/tmp/project' });
+  doc = applyUpdate(doc, update(doc, [
+    { op: 'page', page: { id: 'other', title: 'Slack 接入' } },
+    { op: 'diagram', diagram: { id: 'flow', pageId: 'main', title: '流程圖', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300"><text>流程</text></svg>' } },
+    { op: 'upsert', item: { id: 'gateway', kind: 'question', pageId: 'other', title: 'Gateway 要不要獨立部署？', text: '影響部署方式' } },
+    { op: 'upsert', item: { id: 'proposal', kind: 'decision', title: '提案：採用方案 A', text: '等使用者確認' } },
+    { op: 'upsert', item: { id: 'idea', kind: 'idea', title: '想法一', text: '想法內容' } },
+    { op: 'upsert', item: { id: 'note', kind: 'note', title: '筆記一', text: '筆記內容', sources: ['docs/a.md'] } },
+    { op: 'upsert', item: { id: 'todo', kind: 'action', title: '還沒做的事' } },
+    { op: 'upsert', item: { id: 'shipped', kind: 'action', title: '已完成的事', done: true } },
+    { op: 'upsert', item: { id: 'answered', kind: 'question', title: '已回答的問題', confirmed: true } },
+    { op: 'upsert', item: { id: 'agreed', kind: 'consensus', title: '已確認的共識', text: '共識內容', confirmed: true } }
+  ], { reason: '使用者確認了共識，也回答了問題。' }));
+  const { app, click, part } = renderViewer(doc);
+  const attention = () => part('<section class="attention"', '</section>');
+  const details = () => part('<section class="details"', '</section>');
+  const sidebar = () => part('<aside class="sidebar">');
+  const at = text => app.innerHTML.indexOf(text);
+  assert.ok(at('<section class="attention"') < at('class="diagram-card') && at('class="diagram-card') < at('<section class="details"'));
+  assert.ok(attention().includes('待確認事項') && attention().includes('<span class="side-count">2</span>'));
+  assert.ok(attention().includes('Gateway 要不要獨立部署？') && attention().includes('待釐清') && attention().includes('提案：採用方案 A') && attention().includes('待確認 · 決策'));
+  assert.ok(attention().includes('data-page="other"') && !attention().includes('data-page="main"'));
+  assert.ok(!attention().includes('影響部署方式'));
+  click({ '[data-toggle]': { dataset: { toggle: 'attention:gateway' } } });
+  assert.ok(attention().includes('影響部署方式') && attention().includes('aria-expanded="true"'));
+  assert.ok(details().includes('細節（6 張）') && details().includes('想法 1 · 筆記 1 · 下一步 2 · 已釐清的問題 1 · 共識與決策 1'));
+  assert.ok(!app.innerHTML.includes('筆記一') && !app.innerHTML.includes('已回答的問題'));
+  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
+  assert.deepEqual([...details().matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]), ['想法（1）', '筆記（1）', '下一步（2）', '已釐清的問題（1）', '共識與決策（1）']);
+  assert.ok(details().includes('還沒做的事') && details().includes('待進行') && details().includes('已完成的事') && details().includes('已完成'));
+  assert.ok(!details().includes('筆記內容'));
+  click({ '[data-toggle]': { dataset: { toggle: 'card:note' } } });
+  assert.ok(details().includes('筆記內容') && details().includes('docs/a.md'));
+  assert.ok(sidebar().includes('已確認的共識') && sidebar().includes('1 已確認'));
+  assert.ok(!sidebar().includes('待釐清') && !sidebar().includes('提案：採用方案 A') && !sidebar().includes('共識內容'));
+  click({ '[data-toggle]': { dataset: { toggle: 'side:agreed' } } });
+  assert.ok(sidebar().includes('共識內容'));
+  click({ '[data-page]': { dataset: { page: 'other' } } });
+  assert.ok(app.innerHTML.includes('aria-label="Slack 接入"') && !app.innerHTML.includes('<section class="details"'));
+  assert.ok(attention().includes('data-page="main"') && !attention().includes('data-page="other"'));
+  click({ '[data-page]': { dataset: { page: 'main' } } });
+  assert.ok(details().includes('筆記一') && details().includes('筆記內容'));
 });
