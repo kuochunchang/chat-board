@@ -362,7 +362,7 @@ test('decisions are listed newest first by confirmation time, or by proposal tim
   at('2026-10-02T06:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: false } }]);
   at('2026-10-03T01:00:00.000Z', [{ op: 'upsert', item: { ...item('first'), confirmed: true } }], '使用者重新確認。');
   doc.history.find(entry => entry.changes.some(change => change.after?.id === 'legacy')).changes = [];
-  const { click, part } = renderViewer(doc);
+  const { part } = renderViewer(doc);
   const time = (value, label) => `${new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))} ${label}`;
   const rows = (html, name) => [...html.matchAll(new RegExp(`<li class="${name}[^"]*">([\\s\\S]*?)</li>`, 'g'))].map(([, row]) => [row.match(/<span class="item-title">(.*?)<\/span>/)[1], row.match(/<time[^>]*>(.*?)<\/time>/)?.[1]]);
   assert.deepEqual(rows(part('<aside class="sidebar">'), 'decision'), [
@@ -371,11 +371,8 @@ test('decisions are listed newest first by confirmation time, or by proposal tim
     ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')]
   ]);
   assert.deepEqual(rows(part('<section class="attention"', '</section>'), 'attention-item'), [['仍待確認', time('2026-10-01T01:00:00.000Z', '提出')]]);
-  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
-  assert.deepEqual(rows(part('<section class="details"', '</section>'), 'detail-item'), [
-    ['最先提出、最後確認', time('2026-10-03T01:00:00.000Z', '確認')],
-    ['先確認的共識', time('2026-10-02T01:00:00.000Z', '確認')]
-  ]);
+  assert.equal(part('<section class="details"'), '');
+  assert.ok(part('<div class="canvas-empty">', '</div>').includes('2 項已確認的共識與決策'));
 });
 
 test('pending items come first, other cards fold into details, and the sidebar lists only confirmed decisions', () => {
@@ -401,24 +398,34 @@ test('pending items come first, other cards fold into details, and the sidebar l
   assert.ok(attention().includes('待確認事項') && attention().includes('<span class="side-count">2</span>'));
   assert.ok(attention().includes('Gateway 要不要獨立部署？') && attention().includes('待釐清') && attention().includes('提案：採用方案 A') && attention().includes('待確認 · 決策'));
   assert.ok(attention().includes('data-page="other"') && !attention().includes('data-page="main"'));
-  assert.ok(!attention().includes('影響部署方式'));
-  click({ '[data-toggle]': { dataset: { toggle: 'attention:gateway' } } });
-  assert.ok(attention().includes('影響部署方式') && attention().includes('aria-expanded="true"'));
-  assert.ok(details().includes('細節（6 張）') && details().includes('想法 1 · 筆記 1 · 下一步 2 · 已釐清的問題 1 · 共識與決策 1'));
+  assert.ok(attention().includes('影響部署方式') && attention().includes('等使用者確認') && !attention().includes('aria-expanded="false"'));
+  click({ '[data-fold]': { dataset: { fold: 'attention:gateway' } } });
+  assert.ok(!attention().includes('影響部署方式') && attention().includes('等使用者確認') && attention().includes('data-fold="attention:gateway" aria-expanded="false"'));
+  click({ '[data-fold]': { dataset: { fold: 'attention:gateway' } } });
+  assert.ok(attention().includes('影響部署方式'));
+  assert.ok(details().includes('細節（5 張）') && details().includes('想法 1 · 筆記 1 · 下一步 2 · 已釐清的問題 1</span>'));
   assert.ok(!app.innerHTML.includes('筆記一') && !app.innerHTML.includes('已回答的問題'));
   click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
-  assert.deepEqual([...details().matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]), ['想法（1）', '筆記（1）', '下一步（2）', '已釐清的問題（1）', '共識與決策（1）']);
+  assert.deepEqual([...details().matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map(match => match[1].replace(/<[^>]+>/g, '')), ['想法（1）', '筆記（1）', '下一步（2）', '已釐清的問題（1）']);
+  assert.deepEqual([...details().matchAll(/data-fold="([^"]+)" aria-expanded="(true|false)"/g)].map(match => `${match[1]} ${match[2]}`), ['group:main:想法 true', 'group:main:筆記 true', 'group:main:下一步 true']);
   assert.ok(details().includes('還沒做的事') && details().includes('待進行') && details().includes('已完成的事') && details().includes('已完成'));
-  assert.ok(!details().includes('筆記內容'));
-  click({ '[data-toggle]': { dataset: { toggle: 'card:note' } } });
-  assert.ok(details().includes('筆記內容') && details().includes('docs/a.md'));
+  assert.deepEqual([...details().matchAll(/<article class="detail-card ([a-z]+)[^"]*">/g)].map(match => match[1]), ['idea', 'note', 'action', 'action', 'question']);
+  assert.ok(details().includes('筆記內容') && details().includes('docs/a.md') && !details().includes('已確認的共識'));
+  assert.ok(!details().includes('data-toggle="card:'));
+  click({ '[data-fold]': { dataset: { fold: 'group:main:想法' } } });
+  assert.ok(details().includes('想法（1）') && !details().includes('想法內容') && details().includes('筆記內容'));
+  assert.ok(details().includes('data-fold="group:main:想法" aria-expanded="false"'));
+  click({ '[data-fold]': { dataset: { fold: 'group:main:想法' } } });
+  assert.ok(details().includes('想法內容'));
   assert.ok(sidebar().includes('已確認的共識') && sidebar().includes('1 已確認'));
   assert.ok(!sidebar().includes('待釐清') && !sidebar().includes('提案：採用方案 A') && !sidebar().includes('共識內容'));
   click({ '[data-toggle]': { dataset: { toggle: 'side:agreed' } } });
   assert.ok(sidebar().includes('共識內容'));
+  click({ '[data-fold]': { dataset: { fold: 'group:main:下一步' } } });
   click({ '[data-page]': { dataset: { page: 'other' } } });
   assert.ok(app.innerHTML.includes('aria-label="Slack 接入"') && !app.innerHTML.includes('<section class="details"'));
   assert.ok(attention().includes('data-page="main"') && !attention().includes('data-page="other"'));
   click({ '[data-page]': { dataset: { page: 'main' } } });
   assert.ok(details().includes('筆記一') && details().includes('筆記內容'));
+  assert.ok(details().includes('下一步（2）') && !details().includes('還沒做的事'));
 });
