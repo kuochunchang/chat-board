@@ -46,6 +46,19 @@ test('every Store save pushes complete HTML; another machine discovers and reads
   assert.equal(git(a.repo, 'status', '--porcelain'), '');
 });
 
+test('a different viewer template on another machine does not create sync commits', () => {
+  const { a, b, remote } = fixture();
+  const created = a.store.create({ project: a.project, title: '模板版本不同' });
+  syncOnce(b.store);
+  const mirror = join(a.repo, 'boards', `${created.id}.html`);
+  writeFileSync(mirror, readFileSync(mirror, 'utf8').replace(/<style>[\s\S]*?<\/style>/, '<style>/* other template */</style>'));
+  git(a.repo, 'add', '--', mirror); git(a.repo, 'commit', '-m', 'other template');
+  git(a.repo, 'push', 'origin', 'HEAD:refs/heads/main');
+  const remoteBefore = git(remote, 'rev-parse', 'refs/heads/main');
+  assert.equal(syncOnce(b.store).state, 'synced');
+  assert.equal(git(remote, 'rev-parse', 'refs/heads/main'), remoteBefore);
+});
+
 test('offline saves survive and independent changes merge with both histories', () => {
   const { a, b, root, remote } = fixture();
   const created = a.store.create({ project: a.project, title: '保留雙方更新' });
