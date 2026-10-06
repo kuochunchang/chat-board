@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, utimesSync, readdirSync, existsSync, realpathSync } from 'node:fs';
+import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 import { createDocument, renderDocument, parseDocument, applyUpdate } from '../lib/document.mjs';
-import { Store, readBoard } from '../lib/storage.mjs';
+import { Store, readBoard, withLock } from '../lib/storage.mjs';
 import { createBoardServer } from '../server.mjs';
 
 function fixture() {
@@ -252,4 +253,24 @@ test('deleting requires an archived board, a reason and the current revision', (
   assert.ok(!existsSync(path));
   assert.equal(store.list().length, 0);
   assert.throws(() => store.get(id), /尚未登記/);
+});
+
+test('a lock left by an exited process or an old empty lock is taken over; a live lock is kept', () => {
+  const root = mkdtempSync(join(tmpdir(), 'chat-board-lock-test-'));
+  const file = join(root, 'record.html');
+  const lock = `${file}.chat-board.lock`;
+  const exitedPid = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  writeFileSync(lock, JSON.stringify({ pid: exitedPid, host: hostname(), at: new Date().toISOString() }));
+  assert.equal(withLock(file, () => JSON.parse(readFileSync(lock, 'utf8')).pid), process.pid);
+  assert.ok(!existsSync(lock));
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, host: hostname() }));
+  assert.throws(() => withLock(file, () => {}), /另一個更新/);
+  const old = new Date(Date.now() - 11 * 60 * 1000);
+  for (const unverified of [JSON.stringify({ pid: exitedPid, host: 'renamed-or-another-computer' }), '']) {
+    writeFileSync(lock, unverified);
+    assert.throws(() => withLock(file, () => {}), /另一個更新/);
+    utimesSync(lock, old, old);
+    assert.equal(withLock(file, () => 'taken over'), 'taken over');
+  }
+  assert.deepEqual(readdirSync(root), []);
 });

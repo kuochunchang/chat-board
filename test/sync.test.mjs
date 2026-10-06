@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Store, readBoard } from '../lib/storage.mjs';
@@ -309,4 +309,17 @@ test('a pending deletion is not registered again from the data repo', () => {
   a.store.delete(created.path, { reason: '刪除' });
   assert.equal(setupSync(a.store).registered, 0);
   assert.equal(a.store.list().length, 0);
+});
+
+test('sync recovers from locks left by an interrupted sync process', () => {
+  const { a } = fixture();
+  const created = a.store.create({ project: a.project, title: '同步被中斷' });
+  const exitedPid = Number(spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout);
+  const owner = JSON.stringify({ pid: exitedPid, host: hostname(), at: new Date().toISOString() });
+  writeFileSync(join(a.repo, '.git', 'chat-board-sync.chat-board.lock'), owner);
+  writeFileSync(`${created.path}.chat-board.lock`, owner);
+  const saved = a.store.update(created.id, change(readBoard(created.path), 'after-restart', '重新啟動後仍可寫入'));
+  assert.equal(saved.sync.state, 'synced');
+  assert.ok(!existsSync(join(a.repo, '.git', 'chat-board-sync.chat-board.lock')));
+  assert.ok(!existsSync(`${created.path}.chat-board.lock`));
 });
