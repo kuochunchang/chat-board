@@ -10,6 +10,11 @@
   const opened = new Set();
   const folded = new Set();
   let copied = { key: '', ok: true };
+  // Remember, in this browser only, when the viewer last saw this discussion. Items changed after that are marked 新.
+  const seenKey = `chat-board:seen:${doc.id}`;
+  let seenBefore = null;
+  try { seenBefore = localStorage.getItem(seenKey); } catch { /* Storage can be unavailable; then nothing is marked. */ }
+  const markSeen = () => { try { localStorage.setItem(seenKey, doc.updatedAt); } catch { /* Ignore. */ } };
   const online = location.protocol !== 'file:' && /^\/boards\/[a-zA-Z0-9-]+$/.test(location.pathname);
   const kinds = { question: ['待釐清', 'help'], idea: ['想法', 'spark'], note: ['筆記', 'note'], consensus: ['共識', 'check'], decision: ['決策', 'branch'], action: ['下一步', 'arrow'] };
   const paths = {
@@ -29,6 +34,8 @@
     chevron: '<path d="m9 6 6 6-6 6"/>',
     copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>'
   };
+  const isNew = value => Boolean(seenBefore && value.updatedAt && Date.parse(value.updatedAt) > Date.parse(seenBefore));
+  const newBadge = value => isNew(value) ? '<span class="new-badge" title="上次開啟這份討論之後新增或更新">新</span>' : '';
   const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.note}</svg>`;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const date = value => new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
@@ -75,14 +82,36 @@
     try { image = `<img src="${esc(svgUrl(diagram.svg))}" alt="${esc(diagram.title)}">`; }
     catch (error) { image = `<p class="form-error">${esc(error.message)}</p>`; }
     const wide = expanded.has(diagram.id);
-    return `<article class="diagram-card${wide ? ' expanded' : ''}"><div class="card-heading"><h3>${esc(diagram.title)}</h3><button type="button" class="icon-button expand-button" data-expand="${esc(diagram.id)}" aria-pressed="${wide}" title="${wide ? '還原圖的寬度' : '把圖展開到全寬'}">${icon(wide ? 'collapse' : 'expand')}<span>${wide ? '還原' : '全寬'}</span></button></div><div class="diagram-frame">${image}</div>${diagram.caption ? `<p class="caption">${esc(diagram.caption)}</p>` : ''}</article>`;
+    return `<article class="diagram-card${wide ? ' expanded' : ''}"><div class="card-heading"><h3>${esc(diagram.title)}${newBadge(diagram)}</h3><button type="button" class="icon-button expand-button" data-expand="${esc(diagram.id)}" aria-pressed="${wide}" title="${wide ? '還原圖的寬度' : '把圖展開到全寬'}">${icon(wide ? 'collapse' : 'expand')}<span>${wide ? '還原' : '全寬'}</span></button></div><div class="diagram-frame">${image}</div>${diagram.caption ? `<p class="caption">${esc(diagram.caption)}</p>` : ''}</article>`;
   }
   function itemToggle(name, key, open, item, label = '') {
-    return `<button type="button" class="item-toggle" data-${name}="${esc(key)}" aria-expanded="${open}">${icon('chevron')}${label}<span class="item-title">${esc(item.title)}</span></button>`;
+    return `<button type="button" class="item-toggle" data-${name}="${esc(key)}" aria-expanded="${open}">${icon('chevron')}${label}<span class="item-title">${esc(item.title)}${newBadge(item)}</span></button>`;
+  }
+  // A link may be recorded on either item; the state always comes from the linked item itself.
+  const linked = item => doc.items.filter(other => other.id !== item.id && ((item.links || []).includes(other.id) || (other.links || []).includes(item.id)));
+  const linkState = other => other.kind === 'action' ? other.done ? '已實作' : '待實作' : isDecision(other) ? other.confirmed ? '已確認' : '待確認' : '';
+  function outcome(item) {
+    const results = linked(item);
+    if (results.some(other => other.kind === 'action' && other.done)) return ['已實作', 'built'];
+    const agreed = results.find(other => isDecision(other) && other.confirmed);
+    if (agreed) return [`已確認為${kinds[agreed.kind][0]}`, 'agreed'];
+    if (results.some(other => isDecision(other))) return ['待確認', 'waiting'];
+    if (results.some(other => other.kind === 'action')) return ['待實作', 'planned'];
+    return null;
+  }
+  function linksHtml(item) {
+    const list = linked(item);
+    if (!list.length) return '';
+    const row = other => {
+      const state = linkState(other), where = pageOf(other) === pageId ? '' : ` data-page="${esc(pageOf(other))}"`;
+      const content = `<span class="link-kind">${esc(kinds[other.kind][0])}${state ? ` · ${state}` : ''}</span><span class="link-title">${esc(other.title)}</span>`;
+      return `<li>${where ? `<button type="button" class="card-link"${where} title="切換到這個項目所在的白板">${content}${icon('arrow')}</button>` : `<span class="card-link">${content}</span>`}</li>`;
+    };
+    return `<div class="card-links"><span class="card-links-label">相關項目</span><ul>${list.map(row).join('')}</ul></div>`;
   }
   function itemBody(item) {
     const badge = item.confirmed && isDecision(item) ? `<span class="badge">${icon('check')}已確認 · ${esc(kinds[item.kind][0])}</span>` : '';
-    const content = `${badge}${item.text ? `<p>${esc(item.text)}</p>` : ''}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}`;
+    const content = `${badge}${item.text ? `<p>${esc(item.text)}</p>` : ''}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}${linksHtml(item)}`;
     return content ? `<div class="item-body">${content}</div>` : '';
   }
   function copyButton(key, label) {
@@ -104,8 +133,8 @@
       else if (typeof blocks.at(-1) === 'object') blocks.at(-1).push(line);
       else blocks.push([line]);
     }
-    const content = `${blocks.map(block => typeof block === 'string' ? block : `<p>${esc(block.join('\n'))}</p>`).join('')}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}`;
-    return item.text || item.sources.length ? `<div class="item-body">${content}</div>` : '';
+    const content = `${blocks.map(block => typeof block === 'string' ? block : `<p>${esc(block.join('\n'))}</p>`).join('')}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}${linksHtml(item)}`;
+    return item.text || item.sources.length || linked(item).length ? `<div class="item-body">${content}</div>` : '';
   }
   async function copyText(text) {
     try { await navigator.clipboard.writeText(text); return true; }
@@ -133,15 +162,23 @@
     };
     return `<section class="attention" aria-label="待確認事項"><div class="side-heading"><h2>${icon('help')}待確認事項</h2><span class="side-heading-actions">${pending.length > 1 ? copyButton('*', '全部複製') : ''}<span class="side-count">${pending.length}</span></span></div>${pending.length ? `<ul class="attention-list">${pending.map(row).join('')}</ul>` : '<p class="attention-empty">這塊白板沒有待確認事項。</p>'}</section>`;
   }
+  // Show the update time only when the item changed after it was created.
+  function cardTime(item) {
+    if (!item.createdAt) return '';
+    const changed = item.updatedAt && Date.parse(item.updatedAt) - Date.parse(item.createdAt) >= 60000;
+    return `<div class="card-time"><time datetime="${esc(item.createdAt)}">${date(item.createdAt)} 建立</time>${changed ? `<span>·</span><time datetime="${esc(item.updatedAt)}">${date(item.updatedAt)} 更新</time>` : ''}</div>`;
+  }
   function detailsHtml(items) {
     const key = `details:${pageId}`;
     const filled = groups.map(([label, test]) => [label, items.filter(test)]).filter(([, list]) => list.length);
     const card = item => {
-      const status = item.kind === 'action' ? `<span class="item-status">${item.done ? '已完成' : '待進行'}</span>` : '';
-      return `<article class="detail-card ${esc(item.kind)}${item.done ? ' done' : ''}"><div class="detail-card-heading"><h4>${esc(item.title)}</h4>${status}</div>${itemBody(item)}</article>`;
+      const result = item.kind === 'action' ? null : outcome(item);
+      const status = item.kind === 'action' ? `<span class="item-status">${item.done ? '已完成' : '待進行'}</span>` : result ? `<span class="item-status outcome ${result[1]}">${result[0]}</span>` : '';
+      return `<article class="detail-card ${esc(item.kind)}${item.done ? ' done' : ''}"><div class="detail-card-heading"><h4>${esc(item.title)}${newBadge(item)}</h4>${status}</div>${cardTime(item)}${itemBody(item)}</article>`;
     };
+    const newestFirst = list => [...list].sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0)).reverse();
     const group = ([label, list]) => {
-      const heading = `${label}（${list.length}）`, cards = `<div class="detail-cards">${list.map(card).join('')}</div>`;
+      const heading = `${label}（${list.length}）`, cards = `<div class="detail-cards">${newestFirst(list).map(card).join('')}</div>`;
       if (!foldable.has(label)) return `<div class="detail-group"><h3>${heading}</h3>${cards}</div>`;
       const foldKey = `group:${pageId}:${label}`, open = !folded.has(foldKey);
       return `<div class="detail-group"><h3><button type="button" class="group-toggle" data-fold="${esc(foldKey)}" aria-expanded="${open}">${icon('chevron')}${heading}</button></h3>${open ? cards : ''}</div>`;
@@ -186,7 +223,7 @@
     const scroll = window.scrollY;
     if (!pages().some(page => page.id === pageId)) pageId = pages()[0].id;
     document.title = `${doc.title} · 共板`;
-    document.getElementById('app').innerHTML = `<header class="topbar"><div class="topbar-left"><a class="brand" ${online ? 'href="/"' : ''}><span class="brand-mark">${icon('board')}</span><span><span class="brand-name">共板</span><span class="brand-sub" style="display:block">THINK TOGETHER</span></span></a><span class="divider"></span><div class="breadcrumb" title="${esc(doc.project.path)}">${icon('folder')}<span>${esc(doc.project.name)}</span>${icon('arrow')}<span>討論紀錄</span></div></div><div class="topbar-right"><span class="save-status"><span class="status-dot ${connected ? '' : 'offline'}"></span>${online ? connected ? 'HTML 已保存 · 即時同步' : '本地連線中斷 · 顯示最後內容' : '獨立 HTML · 離線紀錄'}</span></div></header><main class="page">${online && !connected ? '<div class="connection-banner">重新連線後，白板會自動同步最新內容。</div>' : ''}<section class="hero"><div><div class="eyebrow">DISCUSSION BOARD <span>／</span><span class="badge">${doc.status === 'active' ? '討論進行中' : '已完成討論'}</span></div><div class="hero-title"><h1>${esc(doc.title)}</h1></div><p class="topic">${esc(doc.topic)}</p></div><div class="hero-meta"><div class="stat"><strong>${pages().length}</strong><span>白板</span></div><div class="stat-divider"></div><div class="stat"><strong>${doc.items.length}</strong><span>思考筆記</span></div><div class="stat-divider"></div><div class="stat"><strong>${confirmed().length}</strong><span>已確認</span></div></div></section><nav class="sheet-nav" aria-label="討論白板頁籤"><div class="sheet-tabs">${pages().map((page,index) => `<button class="sheet-tab ${view === 'board' && pageId === page.id ? 'active' : ''}" data-page="${esc(page.id)}" aria-current="${view === 'board' && pageId === page.id ? 'page' : 'false'}"><span class="sheet-number">${String(index + 1).padStart(2,'0')}</span>${esc(page.title)}${tabPending(page.id)}</button>`).join('')}</div><button class="history-tab ${view === 'history' ? 'active' : ''}" data-view="history">${icon('clock')}討論脈絡<span class="tab-count">${doc.history.length}</span></button></nav>${view === 'history' ? historyView() : boardView()}<footer class="footer"><span class="footer-path" title="${esc(filePath || doc.project.path)}">${filePath ? '紀錄：' + esc(filePath) : '專案：' + esc(doc.project.path)}</span><span>更新於 ${date(doc.updatedAt)} <span>·</span> 第 ${doc.revision} 版 <span>·</span> 共板</span></footer></main>`;
+    document.getElementById('app').innerHTML = `<header class="topbar"><div class="topbar-left"><a class="brand" ${online ? 'href="/"' : ''}><span class="brand-mark">${icon('board')}</span><span><span class="brand-name">共板</span><span class="brand-sub" style="display:block">THINK TOGETHER</span></span></a><span class="divider"></span><div class="breadcrumb" title="${esc(doc.project.path)}">${icon('folder')}<span>${esc(doc.project.name)}</span>${icon('arrow')}<span>討論紀錄</span></div></div><div class="topbar-right"><span class="save-status"><span class="status-dot ${connected ? '' : 'offline'}"></span>${online ? connected ? 'HTML 已保存 · 即時同步' : '本地連線中斷 · 顯示最後內容' : '獨立 HTML · 離線紀錄'}</span></div></header><main class="page">${online && !connected ? '<div class="connection-banner">重新連線後，白板會自動同步最新內容。</div>' : ''}<section class="hero"><div><div class="eyebrow">DISCUSSION BOARD <span>／</span><span class="badge">${doc.status === 'active' ? '討論進行中' : '已完成討論'}</span></div><div class="hero-title"><h1>${esc(doc.title)}</h1></div><p class="topic">${esc(doc.topic)}</p></div><div class="hero-meta"><div class="stat"><strong>${pages().length}</strong><span>白板</span></div><div class="stat-divider"></div><div class="stat"><strong>${doc.items.length}</strong><span>思考筆記</span></div><div class="stat-divider"></div><div class="stat"><strong>${confirmed().length}</strong><span>已確認</span></div></div></section><nav class="sheet-nav" aria-label="討論白板頁籤"><div class="sheet-tabs">${pages().map((page,index) => `<button class="sheet-tab ${view === 'board' && pageId === page.id ? 'active' : ''}" data-page="${esc(page.id)}" aria-current="${view === 'board' && pageId === page.id ? 'page' : 'false'}"><span class="sheet-number">${String(index + 1).padStart(2,'0')}</span>${esc(page.title)}${tabPending(page.id)}${[...doc.items, ...doc.diagrams].some(value => pageOf(value) === page.id && isNew(value)) ? '<span class="tab-new" title="有新內容"></span>' : ''}</button>`).join('')}</div><button class="history-tab ${view === 'history' ? 'active' : ''}" data-view="history">${icon('clock')}討論脈絡<span class="tab-count">${doc.history.length}</span></button></nav>${view === 'history' ? historyView() : boardView()}<footer class="footer"><span class="footer-path" title="${esc(filePath || doc.project.path)}">${filePath ? '紀錄：' + esc(filePath) : '專案：' + esc(doc.project.path)}</span><span>更新於 ${date(doc.updatedAt)} <span>·</span> 第 ${doc.revision} 版 <span>·</span> 共板</span></footer></main>`;
     window.scrollTo(0, scroll);
   }
   async function refresh() {
@@ -196,6 +233,7 @@
       const result = await response.json();
       connected = true; filePath = result.path;
       if (result.doc.revision >= doc.revision) doc = result.doc;
+      markSeen();
       render();
     } catch { /* Preserve the last rendered board during temporary disconnects. */ }
   }
@@ -233,6 +271,7 @@
     if (tab) { view = tab.dataset.view; window.scrollTo(0, 0); render(); }
   });
   render();
+  markSeen();
   if (online) {
     const events = new EventSource('/api/events');
     events.onopen = () => { connected = true; render(); refresh(); };

@@ -12,7 +12,7 @@ node bin/board.mjs open --file /path/to/record.html
 node bin/board.mjs update --file /path/to/record.html --input /path/to/update.json
 node bin/board.mjs update --file /path/to/record.html --input - < update.json
 node bin/board.mjs page --file /path/to/record.html --id architecture --title "架構圖" [--description "說明"]
-node bin/board.mjs add --file /path/to/record.html --kind note --title "標題" --text "內容" [--page architecture] [--id stable-id] [--confirmed --reason "使用者明確確認了什麼"]
+node bin/board.mjs add --file /path/to/record.html --kind note --title "標題" --text "內容" [--page architecture] [--id stable-id] [--links id-1,id-2] [--confirmed --reason "使用者明確確認了什麼"]
 node bin/board.mjs diagram --file /path/to/record.html --svg /path/to/diagram.svg --title "流程" [--page architecture] [--id stable-id] [--caption "圖說"]
 node bin/board.mjs confirm --file /path/to/record.html --id item-id --reason "使用者明確確認了什麼"
 node bin/board.mjs checkpoint --file /path/to/record.html --label "轉折" [--reason "原因"]
@@ -24,6 +24,7 @@ node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確�
 
 可用 kind：${KINDS.join(', ')}
 在 chat 等使用者決定或回答時，同時新增 kind 為 question 的項目，讓它出現在白板最上方的「待確認事項」。用 --page 指定問題所屬的白板：每塊白板只列出自己的待確認事項，頁籤顯示各白板的待確認數。使用者回覆後，把答案記入相關項目，再移除這個問題。
+想法或筆記後來成為共識、決策或下一步時，用 links（或 add --links）記下相關項目的 ID，可以記在任一邊。白板依相關項目的實際狀態，在卡片標示「已實作」「已確認」或「待確認」。
 read 預設不輸出討論脈絡（history），並在 omitted 標示省略的筆數；需要時加 --history。--no-svg 省略圖的 SVG 原始碼；只改圖的標題或圖說時，update 沿用原本的 SVG。
 可加 --revision N 避免覆蓋別人的新更新；update 的 JSON 必須包含 expectedRevision。
 合併分頁：先在同一份 update 搬移筆記與圖，再以 {"op":"remove","target":"page","id":"來源頁 ID"} 移除空頁，並提供 reason。至少保留一頁。
@@ -82,7 +83,7 @@ try {
           const operation = { op: command };
           if (command === 'add') {
             operation.op = 'upsert';
-            operation.item = { id: options.id, pageId: options.page, kind: options.kind || 'note', title: options.title || '', text: options.text || '', ...(options.confirmed ? { confirmed: true } : {}) };
+            operation.item = { id: options.id, pageId: options.page, kind: options.kind || 'note', title: options.title || '', text: options.text || '', ...(options.links ? { links: options.links.split(',').map(link => link.trim()).filter(Boolean) } : {}), ...(options.confirmed ? { confirmed: true } : {}) };
           } else if (command === 'page') {
             operation.page = { id: options.id, title: options.title || '討論白板', description: options.description || '' };
           } else if (command === 'diagram') {

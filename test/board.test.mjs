@@ -464,3 +464,88 @@ test('each option copies the question with that option only', async () => {
   await settle();
   assert.equal(writes.at(-1), '［plan］提案：採用方案 A\n\n［when］何時繼續設計？\nA. 先停\nB. 繼續');
 });
+
+test('detail cards show their times and list the newest first in each group', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-01T00:00:00.000Z') });
+  let doc = createDocument({ title: '卡片時間', project: '/tmp/project' });
+  const at = (time, operations) => { t.mock.timers.setTime(Date.parse(time)); doc = applyUpdate(doc, update(doc, operations)); };
+  at('2026-10-01T01:00:00.000Z', [{ op: 'upsert', item: { id: 'old', kind: 'note', title: '舊筆記' } }]);
+  at('2026-10-02T01:00:00.000Z', [{ op: 'upsert', item: { id: 'new', kind: 'note', title: '新筆記' } }]);
+  at('2026-10-03T01:00:00.000Z', [{ op: 'upsert', item: { id: 'old', kind: 'note', title: '舊筆記', text: '補充' } }]);
+  const { click, part } = renderViewer(doc);
+  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
+  const cards = [...part('<section class="details"', '</section>').matchAll(/<h4>(.*?)<\/h4>[\s\S]*?<div class="card-time">([\s\S]*?)<\/div>/g)].map(([, title, time]) => [title, time.replace(/<[^>]+>/g, '')]);
+  const format = value => new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
+  assert.deepEqual(cards, [
+    ['新筆記', `${format('2026-10-02T01:00:00.000Z')} 建立`],
+    ['舊筆記', `${format('2026-10-01T01:00:00.000Z')} 建立·${format('2026-10-03T01:00:00.000Z')} 更新`]
+  ]);
+});
+
+test('items changed since the last visit in this browser are marked new', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-01T00:00:00.000Z') });
+  let doc = createDocument({ title: '新內容', project: '/tmp/project' });
+  const at = (time, operations) => { t.mock.timers.setTime(Date.parse(time)); doc = applyUpdate(doc, update(doc, operations)); };
+  at('2026-10-01T01:00:00.000Z', [{ op: 'page', page: { id: 'other', title: '另一塊白板' } }, { op: 'upsert', item: { id: 'seen', kind: 'note', title: '看過的筆記' } }]);
+  const seenAt = doc.updatedAt;
+  at('2026-10-02T01:00:00.000Z', [{ op: 'upsert', item: { id: 'fresh', kind: 'question', pageId: 'other', title: '新的問題' } }]);
+  const store = new Map([[`chat-board:seen:${doc.id}`, seenAt]]);
+  const localStorage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) };
+  const { app, click, part } = renderViewer(doc, { localStorage });
+  assert.equal(store.get(`chat-board:seen:${doc.id}`), doc.updatedAt);
+  const tab = id => app.innerHTML.match(new RegExp(`<button class="sheet-tab[^"]*" data-page="${id}"[\\s\\S]*?</button>`))[0];
+  assert.ok(tab('other').includes('tab-new') && !tab('main').includes('tab-new'));
+  click({ '[data-page]': { dataset: { page: 'other' } } });
+  assert.ok(part('<section class="attention"', '</section>').includes('新的問題<span class="new-badge"'));
+  click({ '[data-page]': { dataset: { page: 'main' } } });
+  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
+  assert.ok(part('<section class="details"', '</section>').includes('<h4>看過的筆記</h4>'));
+  const first = renderViewer(doc, { localStorage: { getItem: () => null, setItem() {} } });
+  assert.ok(!first.app.innerHTML.includes('new-badge') && !first.app.innerHTML.includes('tab-new'));
+});
+
+test('the library summary counts the items that wait for the user', () => {
+  const { store, doc, path } = fixture();
+  writeFileSync(path, renderDocument(applyUpdate(doc, update(doc, [
+    { op: 'upsert', item: { id: 'ask', kind: 'question', title: '問題' } },
+    { op: 'upsert', item: { id: 'plan', kind: 'decision', title: '提案' } },
+    { op: 'upsert', item: { id: 'done', kind: 'consensus', title: '已確認', confirmed: true } }
+  ], { reason: '使用者確認。' }))));
+  const summary = store.list().find(board => board.id === doc.id);
+  assert.equal(summary.pending, 2);
+  assert.equal(summary.confirmed, 1);
+});
+
+test('linked items show whether an idea became a consensus or was implemented', () => {
+  let doc = createDocument({ title: '卡片狀態', project: '/tmp/project' });
+  assert.throws(() => applyUpdate(doc, update(doc, [{ op: 'upsert', item: { id: 'self', kind: 'idea', title: '自己', links: ['self'] } }])), /links/);
+  assert.throws(() => applyUpdate(doc, update(doc, [{ op: 'upsert', item: { id: 'bad', kind: 'idea', title: '格式錯', links: 'x' } }])), /links/);
+  doc = applyUpdate(doc, update(doc, [
+    { op: 'page', page: { id: 'other', title: '另一塊白板' } },
+    { op: 'upsert', item: { id: 'built', kind: 'idea', title: '已做的想法', links: ['agreed', 'shipped'] } },
+    { op: 'upsert', item: { id: 'agreed-idea', kind: 'idea', title: '成為共識的想法' } },
+    { op: 'upsert', item: { id: 'waiting', kind: 'idea', title: '等確認的想法', links: ['proposal'] } },
+    { op: 'upsert', item: { id: 'planned', kind: 'note', title: '待實作的筆記', links: ['todo'] } },
+    { op: 'upsert', item: { id: 'plain', kind: 'idea', title: '沒有連結的想法' } },
+    { op: 'upsert', item: { id: 'agreed', kind: 'consensus', title: '共識甲', confirmed: true, links: ['agreed-idea'] } },
+    { op: 'upsert', item: { id: 'proposal', kind: 'decision', title: '提案乙' } },
+    { op: 'upsert', item: { id: 'shipped', kind: 'action', pageId: 'other', title: '已做的事', done: true } },
+    { op: 'upsert', item: { id: 'todo', kind: 'action', title: '還沒做的事' } }
+  ], { reason: '使用者確認共識甲。' }));
+  assert.deepEqual(doc.items.find(item => item.id === 'built').links, ['agreed', 'shipped']);
+  assert.deepEqual(doc.items.find(item => item.id === 'plain').links, []);
+  const { click, part } = renderViewer(doc);
+  click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
+  const card = title => part('<section class="details"', '</section>').match(new RegExp(`<article class="detail-card[^"]*"><div class="detail-card-heading"><h4>${title}</h4>[\\s\\S]*?</article>`))[0];
+  const status = title => card(title).match(/<span class="item-status[^"]*">(.*?)<\/span>/)?.[1];
+  assert.equal(status('已做的想法'), '已實作');
+  assert.equal(status('成為共識的想法'), '已確認為共識');
+  assert.equal(status('等確認的想法'), '待確認');
+  assert.equal(status('待實作的筆記'), '待實作');
+  assert.equal(status('沒有連結的想法'), undefined);
+  assert.ok(card('已做的想法').includes('共識 · 已確認</span><span class="link-title">共識甲') && card('已做的想法').includes('data-page="other"'));
+  assert.ok(card('成為共識的想法').includes('<span class="card-link"><span class="link-kind">共識 · 已確認'));
+  assert.ok(!card('沒有連結的想法').includes('card-links'));
+  click({ '[data-toggle]': { dataset: { toggle: 'side:agreed' } } });
+  assert.ok(part('<aside class="sidebar">').includes('<span class="link-title">已做的想法</span>') && part('<aside class="sidebar">').includes('<span class="link-title">成為共識的想法</span>'));
+});
