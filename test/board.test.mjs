@@ -18,10 +18,11 @@ function fixture() {
   return { root, project, store, ...result };
 }
 const update = (doc, operations, extra = {}) => ({ expectedRevision: doc.revision, actor: 'ai', summary: '整理進展', operations, ...extra });
-function renderViewer(doc) {
+function renderViewer(doc, extra = {}) {
   const html = renderDocument(doc);
   const app = { innerHTML: '' }, handlers = new Map();
   runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    ...extra,
     document: { getElementById: id => id === 'app' ? app : { textContent: JSON.stringify(parseDocument(html)) }, addEventListener: (name, handler) => handlers.set(name, handler) },
     location: { protocol: 'file:', pathname: '/discussion.html' },
     window: { scrollY: 0, scrollTo() {}, scrollBy() {} }
@@ -177,7 +178,7 @@ test('standalone HTML can render and switch whiteboards without the server or ne
     EventSource:class { constructor(){ networkCalls++; throw new Error('No server in standalone HTML'); } }
   });
   const click = targets => handlers.get('click')({ target:{ closest: selector => targets[selector] ?? null } });
-  assert.ok(app.innerHTML.includes('目前沒有待確認事項'));
+  assert.ok(app.innerHTML.includes('這塊白板沒有待確認事項'));
   assert.ok(app.innerHTML.includes('細節（1 張）') && !app.innerHTML.includes('第一塊的筆記'));
   click({ '[data-toggle]': { dataset:{ toggle:'details:main' } } });
   assert.ok(app.innerHTML.includes('第一塊的筆記') && !app.innerHTML.includes('第二塊的筆記'));
@@ -395,14 +396,15 @@ test('pending items come first, other cards fold into details, and the sidebar l
   const sidebar = () => part('<aside class="sidebar">');
   const at = text => app.innerHTML.indexOf(text);
   assert.ok(at('<section class="attention"') < at('class="diagram-card') && at('class="diagram-card') < at('<section class="details"'));
-  assert.ok(attention().includes('待確認事項') && attention().includes('<span class="side-count">2</span>'));
-  assert.ok(attention().includes('Gateway 要不要獨立部署？') && attention().includes('待釐清') && attention().includes('提案：採用方案 A') && attention().includes('待確認 · 決策'));
-  assert.ok(attention().includes('data-page="other"') && !attention().includes('data-page="main"'));
-  assert.ok(attention().includes('影響部署方式') && attention().includes('等使用者確認') && !attention().includes('aria-expanded="false"'));
-  click({ '[data-fold]': { dataset: { fold: 'attention:gateway' } } });
-  assert.ok(!attention().includes('影響部署方式') && attention().includes('等使用者確認') && attention().includes('data-fold="attention:gateway" aria-expanded="false"'));
-  click({ '[data-fold]': { dataset: { fold: 'attention:gateway' } } });
-  assert.ok(attention().includes('影響部署方式'));
+  assert.ok(attention().includes('待確認事項') && attention().includes('<span class="side-count">1</span>'));
+  assert.ok(attention().includes('提案：採用方案 A') && attention().includes('待確認 · 決策') && !attention().includes('Gateway 要不要獨立部署？') && !attention().includes('data-page='));
+  const tab = id => app.innerHTML.match(new RegExp(`<button class="sheet-tab[^"]*" data-page="${id}"[\\s\\S]*?</button>`))[0];
+  assert.ok(tab('main').includes('<span class="tab-pending" title="1 項待確認">1</span>') && tab('other').includes('<span class="tab-pending" title="1 項待確認">1</span>'));
+  assert.ok(attention().includes('等使用者確認') && !attention().includes('aria-expanded="false"'));
+  click({ '[data-fold]': { dataset: { fold: 'attention:proposal' } } });
+  assert.ok(!attention().includes('等使用者確認') && attention().includes('data-fold="attention:proposal" aria-expanded="false"'));
+  click({ '[data-fold]': { dataset: { fold: 'attention:proposal' } } });
+  assert.ok(attention().includes('等使用者確認'));
   assert.ok(details().includes('細節（5 張）') && details().includes('想法 1 · 筆記 1 · 下一步 2 · 已釐清的問題 1</span>'));
   assert.ok(!app.innerHTML.includes('筆記一') && !app.innerHTML.includes('已回答的問題'));
   click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
@@ -424,8 +426,41 @@ test('pending items come first, other cards fold into details, and the sidebar l
   click({ '[data-fold]': { dataset: { fold: 'group:main:下一步' } } });
   click({ '[data-page]': { dataset: { page: 'other' } } });
   assert.ok(app.innerHTML.includes('aria-label="Slack 接入"') && !app.innerHTML.includes('<section class="details"'));
-  assert.ok(attention().includes('data-page="main"') && !attention().includes('data-page="other"'));
+  assert.ok(attention().includes('Gateway 要不要獨立部署？') && attention().includes('待釐清') && attention().includes('影響部署方式') && !attention().includes('提案：採用方案 A'));
   click({ '[data-page]': { dataset: { page: 'main' } } });
   assert.ok(details().includes('筆記一') && details().includes('筆記內容'));
   assert.ok(details().includes('下一步（2）') && !details().includes('還沒做的事'));
+});
+
+test('each option copies the question with that option only', async () => {
+  let doc = createDocument({ title: '複製回覆', project: '/tmp/project' });
+  doc = applyUpdate(doc, update(doc, [
+    { op: 'upsert', item: { id: 'when', kind: 'question', title: '何時繼續設計？', text: '背景說明。\n選項：\nA. 先停\nB. 繼續\n補充說明。' } },
+    { op: 'upsert', item: { id: 'plan', kind: 'decision', title: '提案：採用方案 A' } },
+    { op: 'page', page: { id: 'other', title: '另一塊白板' } },
+    { op: 'upsert', item: { id: 'elsewhere', pageId: 'other', kind: 'question', title: '別塊白板的問題', text: 'A. 甲' } },
+    { op: 'upsert', item: { id: 'agreed', kind: 'consensus', title: '已確認的共識', confirmed: true } }
+  ], { reason: '使用者確認了共識。' }));
+  const writes = [], timers = [];
+  const { click, part } = renderViewer(doc, { navigator: { clipboard: { writeText: async text => { writes.push(text); } } }, setTimeout: fn => timers.push(fn) });
+  const attention = () => part('<section class="attention"', '</section>');
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  assert.ok(!attention().includes('data-copy="when"') && attention().includes('data-copy="when::0"') && attention().includes('data-copy="when::1"'));
+  assert.ok(attention().includes('<p>背景說明。\n選項：</p>') && attention().includes('<span class="option-text">B. 繼續</span>') && attention().includes('<p>補充說明。</p>'));
+  assert.ok(attention().includes('data-copy="plan"') && attention().includes('複製題目') && attention().includes('data-copy="*"'));
+  click({ '[data-copy]': { dataset: { copy: 'when::1' } } });
+  await settle();
+  assert.equal(writes.at(-1), '［when］何時繼續設計？\nB. 繼續');
+  assert.ok(attention().includes('copy-button copied" data-copy="when::1"') && !attention().includes('copied" data-copy="when::0"'));
+  timers.shift()();
+  assert.ok(!attention().includes('已複製'));
+  click({ '[data-copy]': { dataset: { copy: 'plan' } } });
+  await settle();
+  assert.equal(writes.at(-1), '［plan］提案：採用方案 A');
+  click({ '[data-copy]': { dataset: { copy: '*' } } });
+  await settle();
+  assert.equal(writes.at(-1), '［plan］提案：採用方案 A\n\n［when］何時繼續設計？\nA. 先停\nB. 繼續');
+  click({ '[data-copy]': { dataset: { copy: '*' } } });
+  await settle();
+  assert.equal(writes.at(-1), '［plan］提案：採用方案 A\n\n［when］何時繼續設計？\nA. 先停\nB. 繼續');
 });

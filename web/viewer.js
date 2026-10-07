@@ -9,6 +9,7 @@
   const expanded = new Set();
   const opened = new Set();
   const folded = new Set();
+  let copied = { key: '', ok: true };
   const online = location.protocol !== 'file:' && /^\/boards\/[a-zA-Z0-9-]+$/.test(location.pathname);
   const kinds = { question: ['待釐清', 'help'], idea: ['想法', 'spark'], note: ['筆記', 'note'], consensus: ['共識', 'check'], decision: ['決策', 'branch'], action: ['下一步', 'arrow'] };
   const paths = {
@@ -25,7 +26,8 @@
     chat: '<path d="M4 4h16v12H9l-5 4zM8 8h8M8 12h5"/>',
     expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
-    chevron: '<path d="m9 6 6 6-6 6"/>'
+    chevron: '<path d="m9 6 6 6-6 6"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>'
   };
   const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.note}</svg>`;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -83,15 +85,53 @@
     const content = `${badge}${item.text ? `<p>${esc(item.text)}</p>` : ''}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}`;
     return content ? `<div class="item-body">${content}</div>` : '';
   }
+  function copyButton(key, label) {
+    const done = copied.key === key, text = done ? copied.ok ? '已複製' : '複製失敗' : label;
+    return `<button type="button" class="icon-button copy-button${done ? copied.ok ? ' copied' : ' failed' : ''}" data-copy="${esc(key)}" title="複製問題與選項，貼到 chat session 回覆">${icon(done && copied.ok ? 'check' : 'copy')}<span>${text}</span></button>`;
+  }
+  const isOption = line => /^([A-Za-z]|\d{1,2})[.、．)）]\s*\S/.test(line.trim());
+  const options = item => String(item.text || '').split('\n').filter(isOption).map(line => line.trim());
+  // Copy only the question and its option lines; the item ID maps the chat reply to the item.
+  function replyText(list) {
+    return list.map(item => [`［${item.id}］${item.title}`, ...options(item)].join('\n')).join('\n\n');
+  }
+  // Each option line gets its own copy button, which copies the question with that option only.
+  function attentionBody(item) {
+    const blocks = [];
+    let index = 0;
+    for (const line of String(item.text || '').split('\n')) {
+      if (isOption(line)) blocks.push(`<div class="option-row"><span class="option-text">${esc(line.trim())}</span>${copyButton(`${item.id}::${index++}`, '複製')}</div>`);
+      else if (typeof blocks.at(-1) === 'object') blocks.at(-1).push(line);
+      else blocks.push([line]);
+    }
+    const content = `${blocks.map(block => typeof block === 'string' ? block : `<p>${esc(block.join('\n'))}</p>`).join('')}${item.sources.map(source => `<span class="source">${esc(source)}</span>`).join('')}`;
+    return item.text || item.sources.length ? `<div class="item-body">${content}</div>` : '';
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch {
+      // file:// pages and older browsers may not expose the async clipboard API.
+      try {
+        const area = document.createElement('textarea');
+        area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+        document.body.appendChild(area); area.select();
+        const ok = document.execCommand('copy'); area.remove(); return ok;
+      } catch { return false; }
+    }
+  }
+  const pageOf = item => item.pageId || pages()[0].id;
+  const isPending = item => !item.confirmed && (item.kind === 'question' || isDecision(item));
+  // Each whiteboard lists only its own pending items; the tabs show the counts of the others.
+  function pendingItems(time, onPage) {
+    return doc.items.filter(item => isPending(item) && pageOf(item) === onPage).sort((a, b) => Date.parse(time(a)) - Date.parse(time(b))).reverse();
+  }
   function attentionHtml(pending, time) {
-    const title = id => esc((pages().find(page => page.id === id) || pages()[0]).title);
     const row = item => {
-      const key = `attention:${item.id}`, open = !folded.has(key), itemPage = item.pageId || pages()[0].id;
+      const key = `attention:${item.id}`, open = !folded.has(key);
       const label = `<span class="badge pending">${item.kind === 'question' ? '待釐清' : `待確認 · ${esc(kinds[item.kind][0])}`}</span>`;
-      const where = itemPage === pageId ? `<span class="page-link current">${title(itemPage)}</span>` : `<button type="button" class="page-link" data-page="${esc(itemPage)}">${icon('arrow')}${title(itemPage)}</button>`;
-      return `<li class="attention-item">${itemToggle('fold', key, open, item, label)}<div class="item-meta"><time datetime="${esc(time(item))}">${date(time(item))} 提出</time>${where}</div>${open ? itemBody(item) : ''}</li>`;
+      return `<li class="attention-item">${itemToggle('fold', key, open, item, label)}<div class="item-meta"><time datetime="${esc(time(item))}">${date(time(item))} 提出</time>${options(item).length ? '' : copyButton(item.id, '複製題目')}</div>${open ? attentionBody(item) : ''}</li>`;
     };
-    return `<section class="attention" aria-label="待確認事項"><div class="side-heading"><h2>${icon('help')}待確認事項</h2><span class="side-count">${pending.length}</span></div>${pending.length ? `<ul class="attention-list">${pending.map(row).join('')}</ul>` : '<p class="attention-empty">目前沒有待確認事項。</p>'}</section>`;
+    return `<section class="attention" aria-label="待確認事項"><div class="side-heading"><h2>${icon('help')}待確認事項</h2><span class="side-heading-actions">${pending.length > 1 ? copyButton('*', '全部複製') : ''}<span class="side-count">${pending.length}</span></span></div>${pending.length ? `<ul class="attention-list">${pending.map(row).join('')}</ul>` : '<p class="attention-empty">這塊白板沒有待確認事項。</p>'}</section>`;
   }
   function detailsHtml(items) {
     const key = `details:${pageId}`;
@@ -123,7 +163,7 @@
     const diagrams = doc.diagrams.filter(belongs);
     const decisionTime = decisionTimes();
     const newestFirst = list => list.sort((a, b) => Date.parse(decisionTime(a)) - Date.parse(decisionTime(b))).reverse();
-    const pending = newestFirst(doc.items.filter(item => !item.confirmed && (item.kind === 'question' || isDecision(item))));
+    const pending = pendingItems(decisionTime, pageId);
     const details = doc.items.filter(item => belongs(item) && !isDecision(item) && !pending.includes(item));
     const settled = doc.items.filter(item => belongs(item) && isDecision(item) && item.confirmed).length;
     const decisions = newestFirst(confirmed());
@@ -138,11 +178,15 @@
   function historyView() {
     return `<section class="history-view"><p class="view-intro">從對話整理出思考的轉折與選擇的理由。完整討論留在 chat session，這裡保留白板的演進紀錄。</p>${[...doc.history].reverse().map(entry => `<article class="timeline-item"><div class="timeline-meta"><span class="actor">${entry.actor === 'ai' ? 'AI 整理' : '開始討論'}</span><time>${date(entry.at)}</time></div><h3>${esc(entry.summary)}</h3>${entry.reason ? `<p>${esc(entry.reason)}</p>` : ''}${entry.changes.length ? `<details><summary>查看這次更新 · ${entry.changes.length} 項</summary>${entry.changes.map(change => `<div class="change-box">${esc(changeText(change))}</div>`).join('')}</details>` : ''}</article>`).join('')}</section>`;
   }
+  function tabPending(id) {
+    const count = doc.items.filter(item => isPending(item) && pageOf(item) === id).length;
+    return count ? `<span class="tab-pending" title="${count} 項待確認">${count}</span>` : '';
+  }
   function render() {
     const scroll = window.scrollY;
     if (!pages().some(page => page.id === pageId)) pageId = pages()[0].id;
     document.title = `${doc.title} · 共板`;
-    document.getElementById('app').innerHTML = `<header class="topbar"><div class="topbar-left"><a class="brand" ${online ? 'href="/"' : ''}><span class="brand-mark">${icon('board')}</span><span><span class="brand-name">共板</span><span class="brand-sub" style="display:block">THINK TOGETHER</span></span></a><span class="divider"></span><div class="breadcrumb" title="${esc(doc.project.path)}">${icon('folder')}<span>${esc(doc.project.name)}</span>${icon('arrow')}<span>討論紀錄</span></div></div><div class="topbar-right"><span class="save-status"><span class="status-dot ${connected ? '' : 'offline'}"></span>${online ? connected ? 'HTML 已保存 · 即時同步' : '本地連線中斷 · 顯示最後內容' : '獨立 HTML · 離線紀錄'}</span></div></header><main class="page">${online && !connected ? '<div class="connection-banner">重新連線後，白板會自動同步最新內容。</div>' : ''}<section class="hero"><div><div class="eyebrow">DISCUSSION BOARD <span>／</span><span class="badge">${doc.status === 'active' ? '討論進行中' : '已完成討論'}</span></div><div class="hero-title"><h1>${esc(doc.title)}</h1></div><p class="topic">${esc(doc.topic)}</p></div><div class="hero-meta"><div class="stat"><strong>${pages().length}</strong><span>白板</span></div><div class="stat-divider"></div><div class="stat"><strong>${doc.items.length}</strong><span>思考筆記</span></div><div class="stat-divider"></div><div class="stat"><strong>${confirmed().length}</strong><span>已確認</span></div></div></section><nav class="sheet-nav" aria-label="討論白板頁籤"><div class="sheet-tabs">${pages().map((page,index) => `<button class="sheet-tab ${view === 'board' && pageId === page.id ? 'active' : ''}" data-page="${esc(page.id)}" aria-current="${view === 'board' && pageId === page.id ? 'page' : 'false'}"><span class="sheet-number">${String(index + 1).padStart(2,'0')}</span>${esc(page.title)}</button>`).join('')}</div><button class="history-tab ${view === 'history' ? 'active' : ''}" data-view="history">${icon('clock')}討論脈絡<span class="tab-count">${doc.history.length}</span></button></nav>${view === 'history' ? historyView() : boardView()}<footer class="footer"><span class="footer-path" title="${esc(filePath || doc.project.path)}">${filePath ? '紀錄：' + esc(filePath) : '專案：' + esc(doc.project.path)}</span><span>更新於 ${date(doc.updatedAt)} <span>·</span> 第 ${doc.revision} 版 <span>·</span> 共板</span></footer></main>`;
+    document.getElementById('app').innerHTML = `<header class="topbar"><div class="topbar-left"><a class="brand" ${online ? 'href="/"' : ''}><span class="brand-mark">${icon('board')}</span><span><span class="brand-name">共板</span><span class="brand-sub" style="display:block">THINK TOGETHER</span></span></a><span class="divider"></span><div class="breadcrumb" title="${esc(doc.project.path)}">${icon('folder')}<span>${esc(doc.project.name)}</span>${icon('arrow')}<span>討論紀錄</span></div></div><div class="topbar-right"><span class="save-status"><span class="status-dot ${connected ? '' : 'offline'}"></span>${online ? connected ? 'HTML 已保存 · 即時同步' : '本地連線中斷 · 顯示最後內容' : '獨立 HTML · 離線紀錄'}</span></div></header><main class="page">${online && !connected ? '<div class="connection-banner">重新連線後，白板會自動同步最新內容。</div>' : ''}<section class="hero"><div><div class="eyebrow">DISCUSSION BOARD <span>／</span><span class="badge">${doc.status === 'active' ? '討論進行中' : '已完成討論'}</span></div><div class="hero-title"><h1>${esc(doc.title)}</h1></div><p class="topic">${esc(doc.topic)}</p></div><div class="hero-meta"><div class="stat"><strong>${pages().length}</strong><span>白板</span></div><div class="stat-divider"></div><div class="stat"><strong>${doc.items.length}</strong><span>思考筆記</span></div><div class="stat-divider"></div><div class="stat"><strong>${confirmed().length}</strong><span>已確認</span></div></div></section><nav class="sheet-nav" aria-label="討論白板頁籤"><div class="sheet-tabs">${pages().map((page,index) => `<button class="sheet-tab ${view === 'board' && pageId === page.id ? 'active' : ''}" data-page="${esc(page.id)}" aria-current="${view === 'board' && pageId === page.id ? 'page' : 'false'}"><span class="sheet-number">${String(index + 1).padStart(2,'0')}</span>${esc(page.title)}${tabPending(page.id)}</button>`).join('')}</div><button class="history-tab ${view === 'history' ? 'active' : ''}" data-view="history">${icon('clock')}討論脈絡<span class="tab-count">${doc.history.length}</span></button></nav>${view === 'history' ? historyView() : boardView()}<footer class="footer"><span class="footer-path" title="${esc(filePath || doc.project.path)}">${filePath ? '紀錄：' + esc(filePath) : '專案：' + esc(doc.project.path)}</span><span>更新於 ${date(doc.updatedAt)} <span>·</span> 第 ${doc.revision} 版 <span>·</span> 共板</span></footer></main>`;
     window.scrollTo(0, scroll);
   }
   async function refresh() {
@@ -164,7 +208,19 @@
     const moved = [...(document.querySelectorAll?.(`[data-${name}]`) || [])].find(element => element.dataset[name] === value);
     if (top !== undefined && moved) window.scrollBy(0, moved.getBoundingClientRect().top - top);
   }
+  async function copyPending(key) {
+    const pending = pendingItems(decisionTimes(), pageId);
+    const split = key.lastIndexOf('::'), id = split < 0 ? key : key.slice(0, split);
+    const list = id === '*' ? pending : pending.filter(item => item.id === id);
+    if (!list.length) return;
+    const text = split < 0 ? replyText(list) : `［${list[0].id}］${list[0].title}\n${options(list[0])[Number(key.slice(split + 2))] ?? ''}`.trim();
+    const ok = await copyText(text);
+    copied = { key, ok }; render();
+    setTimeout(() => { if (copied.key === key) { copied = { key: '', ok: true }; render(); } }, 1600);
+  }
   document.addEventListener('click', event => {
+    const copy = event.target.closest('[data-copy]');
+    if (copy) { copyPending(copy.dataset.copy); return; }
     const expand = event.target.closest('[data-expand]');
     if (expand) { toggleInPlace(expand, 'expand', expanded); return; }
     const toggle = event.target.closest('[data-toggle]');
