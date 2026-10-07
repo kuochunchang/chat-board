@@ -23,7 +23,7 @@ node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"]
 node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確要求刪除的原因" [--revision N]
 
 可用 kind：${KINDS.join(', ')}
-在 chat 等使用者決定或回答時，同時新增 kind 為 question 的項目，讓它出現在白板最上方的「待確認事項」。用 --page 指定問題所屬的白板：每塊白板只列出自己的待確認事項，頁籤顯示各白板的待確認數。使用者回覆後，把答案記入相關項目，再移除這個問題。
+在 chat 等使用者決定或回答時，同時新增 kind 為 question 的項目，讓它出現在白板最上方的「待確認事項」。用 --page 指定問題所屬的白板：每塊白板只列出自己的待確認事項，頁籤顯示各白板的待確認數（琥珀色）與待進行數（藍色外框）。使用者回覆後，把答案記入相關項目，再移除這個問題。
 未完成的下一步（kind 為 action）列在白板的「待進行」區塊；完成時在同一次更新標成 done。
 想法或筆記後來成為共識、決策或下一步時，用 links（或 add --links）記下相關項目的 ID，可以記在任一邊。白板依相關項目的實際狀態，在卡片標示「已實作」「已確認」或「待確認」。
 read 預設不輸出討論脈絡（history），並在 omitted 標示省略的筆數；需要時加 --history。--no-svg 省略圖的 SVG 原始碼；只改圖的標題或圖說時，update 沿用原本的 SVG。

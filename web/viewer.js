@@ -226,7 +226,8 @@
   }
   function tabPending(id) {
     const count = doc.items.filter(item => isPending(item) && pageOf(item) === id).length;
-    return count ? `<span class="tab-pending" title="${count} 項待確認">${count}</span>` : '';
+    const open = doc.items.filter(item => item.kind === 'action' && !item.done && pageOf(item) === id).length;
+    return `${count ? `<span class="tab-pending" title="${count} 項待確認">${count}</span>` : ''}${open ? `<span class="tab-open-actions" title="${open} 項待進行">${open}</span>` : ''}`;
   }
   function render() {
     const scroll = window.scrollY;

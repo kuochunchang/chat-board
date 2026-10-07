@@ -408,6 +408,8 @@ test('pending items come first, other cards fold into details, and the sidebar l
   const openActions = () => part('<section class="open-actions"', '</section>');
   assert.ok(at('<section class="attention"') < at('<section class="open-actions"') && at('<section class="open-actions"') < at('class="diagram-card'));
   assert.ok(openActions().includes('待進行') && openActions().includes('<span class="side-count">1</span>') && openActions().includes('還沒做的事') && !openActions().includes('已完成的事'));
+  const tabOf = id => app.innerHTML.match(new RegExp(`<button class="sheet-tab[^"]*" data-page="${id}"[\\s\\S]*?</button>`))[0];
+  assert.ok(tabOf('main').includes('<span class="tab-open-actions" title="1 項待進行">1</span>') && !tabOf('other').includes('tab-open-actions'));
   assert.ok(!attention().includes('還沒做的事'));
   assert.ok(details().includes('細節（4 張）') && details().includes('想法 1 · 筆記 1 · 已完成的下一步 1 · 已釐清的問題 1</span>'));
   assert.ok(!app.innerHTML.includes('筆記一') && !app.innerHTML.includes('已回答的問題'));
