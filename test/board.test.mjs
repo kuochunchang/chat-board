@@ -405,13 +405,17 @@ test('pending items come first, other cards fold into details, and the sidebar l
   assert.ok(!attention().includes('等使用者確認') && attention().includes('data-fold="attention:proposal" aria-expanded="false"'));
   click({ '[data-fold]': { dataset: { fold: 'attention:proposal' } } });
   assert.ok(attention().includes('等使用者確認'));
-  assert.ok(details().includes('細節（5 張）') && details().includes('想法 1 · 筆記 1 · 下一步 2 · 已釐清的問題 1</span>'));
+  const openActions = () => part('<section class="open-actions"', '</section>');
+  assert.ok(at('<section class="attention"') < at('<section class="open-actions"') && at('<section class="open-actions"') < at('class="diagram-card'));
+  assert.ok(openActions().includes('待進行') && openActions().includes('<span class="side-count">1</span>') && openActions().includes('還沒做的事') && !openActions().includes('已完成的事'));
+  assert.ok(!attention().includes('還沒做的事'));
+  assert.ok(details().includes('細節（4 張）') && details().includes('想法 1 · 筆記 1 · 已完成的下一步 1 · 已釐清的問題 1</span>'));
   assert.ok(!app.innerHTML.includes('筆記一') && !app.innerHTML.includes('已回答的問題'));
   click({ '[data-toggle]': { dataset: { toggle: 'details:main' } } });
-  assert.deepEqual([...details().matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map(match => match[1].replace(/<[^>]+>/g, '')), ['想法（1）', '筆記（1）', '下一步（2）', '已釐清的問題（1）']);
-  assert.deepEqual([...details().matchAll(/data-fold="([^"]+)" aria-expanded="(true|false)"/g)].map(match => `${match[1]} ${match[2]}`), ['group:main:想法 true', 'group:main:筆記 true', 'group:main:下一步 true']);
-  assert.ok(details().includes('還沒做的事') && details().includes('待進行') && details().includes('已完成的事') && details().includes('已完成'));
-  assert.deepEqual([...details().matchAll(/<article class="detail-card ([a-z]+)[^"]*">/g)].map(match => match[1]), ['idea', 'note', 'action', 'action', 'question']);
+  assert.deepEqual([...details().matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map(match => match[1].replace(/<[^>]+>/g, '')), ['想法（1）', '筆記（1）', '已完成的下一步（1）', '已釐清的問題（1）']);
+  assert.deepEqual([...details().matchAll(/data-fold="([^"]+)" aria-expanded="(true|false)"/g)].map(match => `${match[1]} ${match[2]}`), ['group:main:想法 true', 'group:main:筆記 true', 'group:main:已完成的下一步 true']);
+  assert.ok(!details().includes('還沒做的事') && details().includes('已完成的事') && details().includes('已完成'));
+  assert.deepEqual([...details().matchAll(/<article class="detail-card ([a-z]+)[^"]*">/g)].map(match => match[1]), ['idea', 'note', 'action', 'question']);
   assert.ok(details().includes('筆記內容') && details().includes('docs/a.md') && !details().includes('已確認的共識'));
   assert.ok(!details().includes('data-toggle="card:'));
   click({ '[data-fold]': { dataset: { fold: 'group:main:想法' } } });
@@ -423,13 +427,15 @@ test('pending items come first, other cards fold into details, and the sidebar l
   assert.ok(!sidebar().includes('待釐清') && !sidebar().includes('提案：採用方案 A') && !sidebar().includes('共識內容'));
   click({ '[data-toggle]': { dataset: { toggle: 'side:agreed' } } });
   assert.ok(sidebar().includes('共識內容'));
-  click({ '[data-fold]': { dataset: { fold: 'group:main:下一步' } } });
+  click({ '[data-fold]': { dataset: { fold: 'group:main:已完成的下一步' } } });
+  click({ '[data-fold]': { dataset: { fold: 'open-action:todo' } } });
+  assert.ok(openActions().includes('data-fold="open-action:todo" aria-expanded="false"'));
   click({ '[data-page]': { dataset: { page: 'other' } } });
-  assert.ok(app.innerHTML.includes('aria-label="Slack 接入"') && !app.innerHTML.includes('<section class="details"'));
+  assert.ok(app.innerHTML.includes('aria-label="Slack 接入"') && !app.innerHTML.includes('<section class="details"') && !app.innerHTML.includes('<section class="open-actions"'));
   assert.ok(attention().includes('Gateway 要不要獨立部署？') && attention().includes('待釐清') && attention().includes('影響部署方式') && !attention().includes('提案：採用方案 A'));
   click({ '[data-page]': { dataset: { page: 'main' } } });
   assert.ok(details().includes('筆記一') && details().includes('筆記內容'));
-  assert.ok(details().includes('下一步（2）') && !details().includes('還沒做的事'));
+  assert.ok(details().includes('已完成的下一步（1）') && !details().includes('已完成的事'));
 });
 
 test('each option copies the question with that option only', async () => {

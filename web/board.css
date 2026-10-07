@@ -48,3 +48,8 @@ button.card-link{color:var(--green)}
 button.card-link:hover .link-title{text-decoration:underline}
 button.card-link .icon{width:11px;height:11px;align-self:center}
 .link-kind{flex-shrink:0;color:#8d9488}
+.open-actions{background:#f2f6fc;border:1px solid #d7e2f1;border-radius:12px;padding:16px 20px;margin-bottom:20px}
+.open-actions .side-heading{margin-bottom:10px}
+.open-actions .side-heading .icon{color:#4a6f9e}
+.open-actions .attention-item{border-top-color:#dfe7f2}
+.open-actions .item-meta .card-time{margin:0}

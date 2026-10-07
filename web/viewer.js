@@ -41,8 +41,8 @@
   const date = value => new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
   const confirmed = () => doc.items.filter(item => ['consensus', 'decision'].includes(item.kind) && item.confirmed);
   const isDecision = item => ['consensus', 'decision'].includes(item.kind);
-  const groups = [['想法', item => item.kind === 'idea'], ['筆記', item => item.kind === 'note'], ['下一步', item => item.kind === 'action'], ['已釐清的問題', item => item.kind === 'question']];
-  const foldable = new Set(['想法', '筆記', '下一步']);
+  const groups = [['想法', item => item.kind === 'idea'], ['筆記', item => item.kind === 'note'], ['已完成的下一步', item => item.kind === 'action'], ['已釐清的問題', item => item.kind === 'question']];
+  const foldable = new Set(['想法', '筆記', '已完成的下一步']);
 
   // Render SVG as a self-contained image, with no scripts or external resources.
   function svgUrl(source) {
@@ -168,6 +168,14 @@
     const changed = item.updatedAt && Date.parse(item.updatedAt) - Date.parse(item.createdAt) >= 60000;
     return `<div class="card-time"><time datetime="${esc(item.createdAt)}">${date(item.createdAt)} 建立</time>${changed ? `<span>·</span><time datetime="${esc(item.updatedAt)}">${date(item.updatedAt)} 更新</time>` : ''}</div>`;
   }
+  // Open actions wait for someone to do them, not for the user to answer, so they stay out of 待確認事項.
+  function openActionsHtml(list) {
+    const row = item => {
+      const key = `open-action:${item.id}`, open = !folded.has(key);
+      return `<li class="attention-item">${itemToggle('fold', key, open, item)}<div class="item-meta">${cardTime(item)}</div>${open ? itemBody(item) : ''}</li>`;
+    };
+    return `<section class="open-actions" aria-label="待進行"><div class="side-heading"><h2>${icon('arrow')}待進行</h2><span class="side-count">${list.length}</span></div><ul class="attention-list">${list.map(row).join('')}</ul></section>`;
+  }
   function detailsHtml(items) {
     const key = `details:${pageId}`;
     const filled = groups.map(([label, test]) => [label, items.filter(test)]).filter(([, list]) => list.length);
@@ -201,11 +209,12 @@
     const decisionTime = decisionTimes();
     const newestFirst = list => list.sort((a, b) => Date.parse(decisionTime(a)) - Date.parse(decisionTime(b))).reverse();
     const pending = pendingItems(decisionTime, pageId);
-    const details = doc.items.filter(item => belongs(item) && !isDecision(item) && !pending.includes(item));
+    const openActions = doc.items.filter(item => belongs(item) && item.kind === 'action' && !item.done).sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0)).reverse();
+    const details = doc.items.filter(item => belongs(item) && !isDecision(item) && !pending.includes(item) && !openActions.includes(item));
     const settled = doc.items.filter(item => belongs(item) && isDecision(item) && item.confirmed).length;
     const decisions = newestFirst(confirmed());
     const wide = diagrams.some(diagram => expanded.has(diagram.id));
-    return `<div class="workspace-grid${wide ? ' wide' : ''}"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${attentionHtml(pending, decisionTime)}${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${details.length ? detailsHtml(details) : ''}${!diagrams.length && !details.length ? settled ? `<div class="canvas-empty">${icon('check')}<h3>這塊白板有 ${settled} 項已確認的共識與決策</h3><p>它們列在「共識與決策」清單，<br>最新的在上面。</p></div>` : `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${decisions.length} 已確認</span></div>${decisions.length ? `<ul class="decision-list">${decisions.map(item => decisionHtml(item, decisionTime(item))).join('')}</ul>` : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
+    return `<div class="workspace-grid${wide ? ' wide' : ''}"><section class="canvas" aria-label="${esc(page.title)}"><div class="canvas-header"><span class="section-title">${icon('board')}${esc(page.title)}</span><span class="canvas-hint">第 ${pages().findIndex(value => value.id === pageId) + 1} 塊白板 / 共 ${pages().length} 塊</span></div>${attentionHtml(pending, decisionTime)}${openActions.length ? openActionsHtml(openActions) : ''}${page.description ? `<p class="page-description">${esc(page.description)}</p>` : ''}${diagrams.map(diagramHtml).join('')}${details.length ? detailsHtml(details) : ''}${!diagrams.length && !details.length && !openActions.length ? settled ? `<div class="canvas-empty">${icon('check')}<h3>這塊白板有 ${settled} 項已確認的共識與決策</h3><p>它們列在「共識與決策」清單，<br>最新的在上面。</p></div>` : `<div class="canvas-empty">${icon('board')}<h3>這塊白板，留給接下來的想法</h3><p>我們在 chat session 繼續討論，<br>AI 會把相關圖與筆記整理到這裡。</p></div>` : ''}</section><aside class="sidebar"><section class="side-panel"><div class="side-heading"><h2>${icon('check')}共識與決策</h2><span class="side-count">${decisions.length} 已確認</span></div>${decisions.length ? `<ul class="decision-list">${decisions.map(item => decisionHtml(item, decisionTime(item))).join('')}</ul>` : '<div class="empty">在對話中確認過的方向會留在這裡。</div>'}</section><div class="aside-note">${icon('chat')}<span>討論留在 chat session。多塊白板與決策脈絡，都已保存在同一份 HTML 裡。</span></div></aside></div>`;
   }
   function changeText(change) {
     const describe = value => typeof value === 'object' && value ? `${value.title || ''}\n${value.text || value.caption || value.topic || ''}${value.svg ? '\n［SVG 圖，完整內容保存在 HTML 資料中］' : ''}${value.confirmed !== undefined ? `\n${value.confirmed ? '已確認' : '待確認'}` : ''}` : String(value ?? '');
