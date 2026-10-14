@@ -1,8 +1,9 @@
 import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Store } from './lib/storage.mjs';
+import { Store, LOCK_BUSY } from './lib/storage.mjs';
 import { BoardError, renderDocument } from './lib/document.mjs';
 import { startSyncPolling, setupSync } from './lib/sync.mjs';
 
@@ -11,6 +12,27 @@ const assets = {
   '/library-viewer.js': [new URL('./web/library-viewer.js', import.meta.url), 'text/javascript; charset=utf-8'],
   '/board.css': [new URL('./web/board.css', import.meta.url), 'text/css; charset=utf-8']
 };
+
+const CLI = fileURLToPath(new URL('./bin/board.mjs', import.meta.url));
+const ARCHIVE_REASONS = { archive: '使用者在網頁上按下封存。', unarchive: '使用者在網頁上按下取消封存。' };
+
+// Run the CLI in a child process: its save waits for Git sync, which would block this server.
+function runCli(args) {
+  return new Promise(resolve => execFile(process.execPath, [CLI, ...args], { encoding: 'utf8', maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    if (!error) return resolve({ result: JSON.parse(stdout) });
+    try { resolve({ error: JSON.parse(stderr) }); } catch { resolve({ error: { error: stderr.trim() || error.message, status: 500 } }); }
+  }));
+}
+
+function readJson(request, limit = 4096) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', chunk => { body += chunk; if (body.length > limit) { reject(new BoardError('請求內容太大。', 413)); request.destroy(); } });
+    request.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch { reject(new BoardError('請求內容必須是 JSON。')); } });
+    request.on('error', reject);
+  });
+}
 
 export function createBoardServer({ store = new Store(), pollInterval = 700 } = {}) {
   const clients = new Set();
@@ -51,9 +73,30 @@ export function createBoardServer({ store = new Store(), pollInterval = 700 } = 
       const allowedHosts = new Set([`127.0.0.1:${address.port}`, `localhost:${address.port}`]);
       if (!allowedHosts.has(request.headers.host)) throw new BoardError('只接受本機連線。', 403);
       const url = new URL(request.url, `http://${request.headers.host}`);
+      // The only write: the library page archives or unarchives a discussion. Accept same-origin JSON only,
+      // so another web page cannot send it; a cross-origin JSON request needs a preflight that this server never allows.
+      const archiveMatch = url.pathname.match(/^\/api\/boards\/([a-zA-Z0-9-]+)\/(archive|unarchive)$/);
+      if (archiveMatch && request.method === 'POST') {
+        if (request.headers.origin !== `http://${request.headers.host}`) throw new BoardError('只接受共板網頁送出的請求。', 403);
+        if (!/^application\/json(;|$)/.test(request.headers['content-type'] || '')) throw new BoardError('請求內容必須是 JSON。', 415);
+        const { revision } = await readJson(request);
+        if (!Number.isSafeInteger(revision)) throw new BoardError('需要 revision。');
+        const [, id, action] = archiveMatch;
+        const { path } = store.get(id);
+        const args = [action, '--file', path, '--revision', String(revision), '--reason', ARCHIVE_REASONS[action], '--actor', 'user', '--registry', store.registry];
+        let outcome = await runCli(args);
+        // A Git sync holds board locks for a few seconds. Wait for it rather than fail the click.
+        for (let attempt = 0; outcome.error?.error === LOCK_BUSY && attempt < 40; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          outcome = await runCli(args);
+        }
+        if (outcome.error) throw new BoardError(outcome.error.error, outcome.error.status || 500);
+        const { doc } = store.get(id);
+        return json(response, 200, { id, revision: doc.revision, archived: Boolean(doc.archived), ...(outcome.result.sync ? { sync: outcome.result.sync } : {}) });
+      }
       if (!['GET', 'HEAD'].includes(request.method)) {
         response.setHeader('Allow', 'GET, HEAD');
-        throw new BoardError('白板只供顯示。請在 chat session 中討論，由 AI 使用 CLI 更新 HTML。', 405);
+        throw new BoardError('白板只供顯示，只有首頁可以封存。請在 chat session 中討論，由 AI 使用 CLI 更新 HTML。', 405);
       }
       if (request.method === 'GET' && url.pathname === '/api/events') {
         response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });

@@ -244,6 +244,49 @@ test('the server is read-only and streams external CLI file updates', async () =
   } finally { controller.abort(); await server.stop(); }
 });
 
+test('the library page can archive and unarchive through same-origin JSON requests only', async () => {
+  const { store, id, path } = fixture();
+  const server = createBoardServer({ store, pollInterval: 30 });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (action, body, headers = { 'Content-Type': 'application/json', Origin: base }) => fetch(`${base}/api/boards/${id}/${action}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post('archive', { revision: 1 }, { 'Content-Type': 'application/json' })).status, 403);
+    assert.equal((await post('archive', { revision: 1 }, { 'Content-Type': 'application/json', Origin: 'https://example.com' })).status, 403);
+    assert.equal((await post('archive', { revision: 1 }, { 'Content-Type': 'text/plain', Origin: base })).status, 415);
+    assert.equal((await fetch(`${base}/api/boards/${id}/archive`, { method: 'OPTIONS', headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'POST' } })).headers.get('access-control-allow-origin'), null);
+    assert.equal((await post('archive', { revision: 0 })).status, 409);
+    assert.equal((await post('finish', { revision: 1 })).status, 405);
+    assert.equal(readBoard(path).archived, undefined);
+
+    const archived = await post('archive', { revision: 1 });
+    assert.equal(archived.status, 200);
+    assert.deepEqual(await archived.json(), { id, revision: 2, archived: true });
+    const doc = readBoard(path);
+    assert.equal(doc.archived, true);
+    assert.equal(doc.history.at(-1).actor, 'user');
+    assert.equal(doc.history.at(-1).summary, '封存討論');
+    assert.match(doc.history.at(-1).reason, /網頁/);
+    assert.equal(store.list()[0].archived, true);
+
+    assert.equal((await post('archive', { revision: 2 })).status, 409);
+    const restored = await post('unarchive', { revision: 2 });
+    assert.equal(restored.status, 200);
+    assert.equal((await restored.json()).archived, false);
+    assert.equal(readBoard(path).archived, false);
+    assert.equal(readBoard(path).history.at(-1).actor, 'user');
+  } finally { await server.stop(); }
+});
+
+test('the library lists open actions so the page can warn before archiving', () => {
+  const { store, id, path } = fixture();
+  store.updateFile(path, update(readBoard(path), [
+    { op: 'upsert', item: { id: 'open', kind: 'action', title: '還要做', text: '' } },
+    { op: 'upsert', item: { id: 'done', kind: 'action', title: '已做完', text: '', done: true } }
+  ]));
+  assert.equal(store.list().find(board => board.id === id).openActions, 1);
+});
+
 test('archiving is recorded in history, blocks edits until unarchived and works on finished discussions', () => {
   const doc = createDocument({ title: '封存', project: '/tmp/project' });
   const finished = applyUpdate(doc, update(doc, [{ op: 'finish' }]));

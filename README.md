@@ -11,7 +11,7 @@ cd /Users/guojun/workspace/chat-board
 npm start
 ```
 
-開啟 <http://127.0.0.1:4317> 閱讀討論白板。網頁只供顯示，頁籤用來切換不同白板；建立、更新與確認都透過 chat session 中的 AI 進行。伺服器只綁定本機 `127.0.0.1`，不提供網頁寫入 API。
+開啟 <http://127.0.0.1:4317> 閱讀討論白板。網頁只供顯示，頁籤用來切換不同白板；建立、更新與確認都透過 chat session 中的 AI 進行。唯一的例外是封存：首頁每份討論都有「封存」或「取消封存」按鈕。伺服器只綁定本機 `127.0.0.1`。
 
 在其他專案建立白板：
 
@@ -256,9 +256,11 @@ npm test
 CHAT_BOARD_PORT=4318 npm start
 ```
 
-唯讀 API：`GET /api/boards`、`GET /api/boards/:id`、`GET /api/events`。POST、PATCH 等寫入請求會被拒絕。CLI 直接更新 HTML，不依賴伺服器運作。
+唯讀 API：`GET /api/boards`、`GET /api/boards/:id`、`GET /api/events`。
 
-這是 chat session 的顯示白板，不包含聊天輸入、人工編輯、手寫畫筆、拖拉或存檔操作。
+寫入 API 只有封存：`POST /api/boards/:id/archive` 與 `POST /api/boards/:id/unarchive`，內容是 `{"revision": N}`。伺服器只接受 `Origin` 與本機網址相同、`Content-Type` 為 `application/json` 的請求，所以其他網頁無法送出。伺服器在子程序執行 CLI，並在歷史中記為使用者操作。其他寫入請求會被拒絕。CLI 直接更新 HTML，不依賴伺服器運作。
+
+這是 chat session 的顯示白板，不包含聊天輸入、人工編輯、手寫畫筆、拖拉或存檔操作；首頁的封存按鈕是唯一例外。
 
 回覆待確認事項時，按你選的那個選項旁的「複製」，會複製事項 ID、問題和這個選項，貼到 chat session 即可。選項是以 `A.`、`B.`（或 `1.`、`2.`）開頭的行。沒有選項的事項提供「複製題目」；標題列的「全部複製」會複製這塊白板所有事項的問題和選項。每塊白板只列出自己的待確認事項；其他白板的待確認數顯示在頁籤上。複製不會改變白板內容。
 

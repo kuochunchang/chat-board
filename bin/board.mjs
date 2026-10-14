@@ -18,8 +18,8 @@ node bin/board.mjs confirm --file /path/to/record.html --id item-id --reason "�
 node bin/board.mjs checkpoint --file /path/to/record.html --label "轉折" [--reason "原因"]
 node bin/board.mjs finish --file /path/to/record.html [--reason "結論"]
 node bin/board.mjs resume --file /path/to/record.html [--reason "原因"]
-node bin/board.mjs archive --file /path/to/record.html [--reason "原因"]
-node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"]
+node bin/board.mjs archive --file /path/to/record.html [--reason "原因"] [--revision N]
+node bin/board.mjs unarchive --file /path/to/record.html [--reason "原因"] [--revision N]
 node bin/board.mjs delete --file /path/to/record.html --reason "使用者明確要求刪除的原因" [--revision N]
 
 可用 kind：${KINDS.join(', ')}
@@ -96,7 +96,7 @@ try {
             operation.op = 'upsert'; operation.item = { ...item, confirmed: true };
           } else if (command === 'checkpoint') operation.label = options.label || '討論里程碑';
           else if (!['finish','resume','archive','unarchive'].includes(command)) throw new BoardError(`未知的指令：${command}`);
-          update = { expectedRevision: options.revision ? Number(options.revision) : doc.revision, actor: 'ai', summary: options.summary || (command === 'add' ? `整理筆記：${options.title || ''}` : command === 'page' ? `整理白板：${options.title || ''}` : command === 'diagram' ? `更新關係圖：${options.title || ''}` : command === 'confirm' ? '記錄使用者確認' : command === 'checkpoint' ? options.label || '討論里程碑' : command === 'finish' ? '完成討論' : command === 'archive' ? '封存討論' : command === 'unarchive' ? '取消封存' : '重新開啟討論'), reason: options.reason || '', operations: [operation] };
+          update = { expectedRevision: options.revision ? Number(options.revision) : doc.revision, actor: options.actor === 'user' && ['archive','unarchive'].includes(command) ? 'user' : 'ai', summary: options.summary || (command === 'add' ? `整理筆記：${options.title || ''}` : command === 'page' ? `整理白板：${options.title || ''}` : command === 'diagram' ? `更新關係圖：${options.title || ''}` : command === 'confirm' ? '記錄使用者確認' : command === 'checkpoint' ? options.label || '討論里程碑' : command === 'finish' ? '完成討論' : command === 'archive' ? '封存討論' : command === 'unarchive' ? '取消封存' : '重新開啟討論'), reason: options.reason || '', operations: [operation] };
         }
         result = store.updateFile(file, update);
       }

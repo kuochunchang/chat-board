@@ -2,7 +2,7 @@
 
 This project is a local discussion-whiteboard tool. The self-contained HTML is the record; do not move discussion content into a separate database or require cloud services.
 
-All discussion, clarification, confirmation, and instructions stay in the chat session. The web page is display-only. Do not add editing, drawing, confirmation, creation, or save controls to it. Content is already persisted when it appears; no explicit save step is needed.
+All discussion, clarification, confirmation, and instructions stay in the chat session. The web page is display-only, with one exception: the library page can archive and unarchive a discussion (user decision, 2026-10-14). Do not add other editing, drawing, confirmation, creation, or save controls to it. Content is already persisted when it appears; no explicit save step is needed.
 
 ## Discussing this project
 
@@ -19,7 +19,7 @@ All discussion, clarification, confirmation, and instructions stay in the chat s
   - The page shows a copy button beside each option line. It copies the item ID, the title and that one option. Lines that do not start with an option label are not copied. If a question is open-ended and has no options, say so in the title.
 - Open actions (`kind: action`, `done: false`) appear in 待進行 below 待確認事項 on their own whiteboard. Set `pageId` to the whiteboard that the work belongs to. Mark an action `done: true` in the same update that records its completion, so 待進行 lists only work that is still open.
 - When an idea, note or question leads to a consensus, decision or action, record the relation in `links` (an array of item IDs; `add --links id-1,id-2`). Record it on either item, in the same update that creates the result. The page derives each card's state from the linked items: 已實作 (a done action), 已確認為共識／決策 (a confirmed item), 待確認 (an unconfirmed consensus or decision) or 待實作 (an open action). Do not use links to claim a state; confirmation and completion still follow the rules above.
-- Archive a discussion with `archive` to hide it from `list` and the library grid; `list --all` shows archived discussions. Delete only when the user explicitly asks. `delete` accepts only archived discussions and requires `--reason`; with sync configured, the deletion is committed to the data repo and the content stays in Git history.
+- Archive a discussion with `archive` to hide it from `list` and the library grid. The user can also archive or unarchive from the library page; the page warns when the discussion has pending items or open actions. Before you archive from chat, check for open questions and open actions and report them; `list --all` shows archived discussions. Delete only when the user explicitly asks. `delete` accepts only archived discussions and requires `--reason`; with sync configured, the deletion is committed to the data repo and the content stays in Git history.
 - Preserve item IDs. Supply the revision you just read and use incremental operations. On a conflict, read the current document and reconcile; never force an old revision over new content.
 - Preserve decision reasons and previous content in history. Include source paths when discussing another project's files.
 - Discussion HTML belongs in the discussed project's `docs/discussions/` by default. The tool can operate across directories using `--project` and `--file`.
@@ -62,6 +62,6 @@ Long discussions accumulate duplicate, superseded and answered items. Consolidat
 - `npm test` verifies document persistence, escaping, approval reasons, history, conflicts, cross-project storage and live file updates.
 - Generated HTML contains inline CSS, JavaScript, SVG data, and all discussion data. Preserve offline reading and switching between all its whiteboards.
 - Keep the registry limited to references, not discussion content. Never overwrite an existing HTML record during creation.
-- The HTTP server is read-only; update files through CLI operations. For UI changes, inspect the actual page and test page switching, live updates and standalone HTML reading.
+- The HTTP server is read-only except `POST /api/boards/:id/archive` and `/unarchive`. These endpoints accept only same-origin JSON requests from the library page and run the CLI in a child process. Update all other content through CLI operations. For UI changes, inspect the actual page and test page switching, live updates and standalone HTML reading.
 - GitHub synchronization is optional. Run `node bin/sync.mjs help` for setup. The server polls for remote discussion versions; CLI saves attempt an immediate push. Do not force-push discussion history or automatically choose a winner for conflicting edits.
 - On another computer, use `node bin/sync.mjs setup` to obtain the data repo from `discussion-repo.json` and build local references. `npm start` also initializes this connection when no local sync configuration exists. Keep local absolute paths and credentials out of the shared reference file.
