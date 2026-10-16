@@ -1,5 +1,13 @@
 # Chat Board working agreement
 
+## 主要開發環境
+
+- 主要開發位置為 `dev-01:/home/guojun/workspace/chat-board`。後續修改、驗證、提交與推送在 dev-01 執行；其他電腦透過 `ssh dev-01` 操作。
+- 討論資料 repo 位於 `/home/guojun/workspace/chat-board-discussions`，使用 HTTPS 連接 GitHub。透過 `node bin/sync.mjs setup` 建立本機設定與索引，不複製其他主機的 `.chat-board/`。
+- 使用 Node.js 官方發行檔 v24.22.0，版本固定於 `.nvmrc`。先載入 `~/.nvm/nvm.sh`，再執行 `nvm use`。不需安裝 npm 套件。
+- 保留 HTML 中的專案 metadata、來源路徑、確認理由與歷史。舊來源路徑不代表目前開發位置。
+- Git remote 使用 HTTPS。新增提交；不自行 amend、force push 或執行破壞性重置。
+
 This project is a local discussion-whiteboard tool. The self-contained HTML is the record; do not move discussion content into a separate database or require cloud services.
 
 All discussion, clarification, confirmation, and instructions stay in the chat session. The web page is display-only, with one exception: the library page can archive and unarchive a discussion (user decision, 2026-10-14). Do not add other editing, drawing, confirmation, creation, or save controls to it. Content is already persisted when it appears; no explicit save step is needed.

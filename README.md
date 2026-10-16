@@ -4,10 +4,35 @@
 
 需要 Node.js 22 或以上。無外部依賴，無需安裝套件、帳號或 API key。AI 使用檔案與 CLI 整理白板；這個工具不包含另一個聊天模型。
 
+## dev-01 開發與資料同步
+
+主要開發位置為 `dev-01:/home/guojun/workspace/chat-board`。資料 repo 為並列的 `/home/guojun/workspace/chat-board-discussions`。兩個 repo 均使用 HTTPS。Node.js 使用官方發行檔 v24.22.0，固定於 `.nvmrc`。
+
+```sh
+ssh dev-01
+cd ~/workspace/chat-board
+. "$HOME/.nvm/nvm.sh"
+nvm use
+node bin/sync.mjs setup
+node bin/sync.mjs status
+npm test
+CHAT_BOARD_PORT=14317 npm start
+```
+
+`discussion-repo.json` 保留共用的 GitHub 位置與相對目錄。`setup` 在 dev-01 建立自己的 `.chat-board/sync.json` 與 `.chat-board/index.json`，使用 Linux 路徑；不要複製 macOS 的本機索引。新討論直接存入資料 repo 的 `boards/`，既有 ID、確認理由、來源與歷史保持不變。
+
+從個人電腦連線時，另開終端機建立 SSH 通道，再開啟 http://127.0.0.1:14317 ：
+
+```sh
+ssh -N -L 14317:127.0.0.1:14317 dev-01
+```
+
+服務仍只監聽 dev-01 的迴路介面。服務執行期間會定期同步；CLI 每次寫入也會立即嘗試推送。操作後以 `sync.state` 確認是否成功，衝突仍需在 chat 處理。
+
 ## 開始使用
 
 ```sh
-cd /Users/guojun/workspace/chat-board
+cd /home/guojun/workspace/chat-board
 npm start
 ```
 
@@ -16,7 +41,7 @@ npm start
 在其他專案建立白板：
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs new \
+node /home/guojun/workspace/chat-board/bin/board.mjs new \
   --project /absolute/path/to/another-project \
   --title "登入流程設計" \
   --topic "釐清現況，比較方案，確認實作方向"
@@ -30,9 +55,9 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs new \
 
 在其他專案的對話開頭，提供這段約定；也可加入該專案的 `AGENTS.md`：
 
-> 請使用 `/Users/guojun/workspace/chat-board` 的共板工具。每次討論建立一份 HTML，或繼續我指定的 HTML。依照討論需要新增多塊白板，例如架構圖、方案比較、筆記與決策。討論有進展時，主動使用 CLI 整理 SVG、筆記、待釐清事項與決策理由；只將我明確確認過的內容標記為已確認。所有討論與操作都留在 chat session，網頁只顯示進展。HTML 存進目前專案的 `docs/discussions/`，提供預覽 URL。
+> 請使用 `/home/guojun/workspace/chat-board` 的共板工具。每次討論建立一份 HTML，或繼續我指定的 HTML。依照討論需要新增多塊白板，例如架構圖、方案比較、筆記與決策。討論有進展時，主動使用 CLI 整理 SVG、筆記、待釐清事項與決策理由；只將我明確確認過的內容標記為已確認。所有討論與操作都留在 chat session，網頁只顯示進展。HTML 存進目前專案的 `docs/discussions/`，提供預覽 URL。
 >
-> 請先閱讀 `/Users/guojun/workspace/chat-board/docs/writing-standard.md`。依照其中借用 ASD-STE100 的寫作原則整理內容：使用短句，說清楚執行者、條件與動作，保持術語一致；保留原意與不確定性，不把提案寫成已確認決策。
+> 請先閱讀 `/home/guojun/workspace/chat-board/docs/writing-standard.md`。依照其中借用 ASD-STE100 的寫作原則整理內容：使用短句，說清楚執行者、條件與動作，保持術語一致；保留原意與不確定性，不把提案寫成已確認決策。
 
 一般工作方式：
 
@@ -62,9 +87,9 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs new \
 每份 HTML 包含 `pages`、`items`、`diagrams` 和 `history`。`pages` 是白板清單，每塊有穩定的 ID、標題和說明；筆記與圖透過 `pageId` 指定放在哪塊白板。預設第一塊的 ID 是 `main`。舊的單塊白板 HTML 仍可讀取。
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs page \
+node /home/guojun/workspace/chat-board/bin/board.mjs page \
   --file /path/to/discussion.html --id architecture --title "架構圖"
-node /Users/guojun/workspace/chat-board/bin/board.mjs page \
+node /home/guojun/workspace/chat-board/bin/board.mjs page \
   --file /path/to/discussion.html --id ideas --title "方案與筆記"
 ```
 
@@ -85,8 +110,8 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs page \
 ### 讀取與增加筆記
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs read --file /path/to/discussion.html
-node /Users/guojun/workspace/chat-board/bin/board.mjs add \
+node /home/guojun/workspace/chat-board/bin/board.mjs read --file /path/to/discussion.html
+node /home/guojun/workspace/chat-board/bin/board.mjs add \
   --file /path/to/discussion.html --kind question \
   --id authentication-question --title "是否需要多因素驗證？" \
   --text "先釐清登入流程的需求與限制。" --revision 1
@@ -130,7 +155,7 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs add \
 ```
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs update \
+node /home/guojun/workspace/chat-board/bin/board.mjs update \
   --file /path/to/discussion.html --input /path/to/update.json
 ```
 
@@ -141,7 +166,7 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs update \
 ### SVG 圖
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs diagram \
+node /home/guojun/workspace/chat-board/bin/board.mjs diagram \
   --file /path/to/discussion.html --svg /path/to/flow.svg \
   --id architecture --title "登入流程" --caption "現況與修改位置"
 ```
@@ -151,8 +176,8 @@ node /Users/guojun/workspace/chat-board/bin/board.mjs diagram \
 ### 結束與繼續
 
 ```sh
-node /Users/guojun/workspace/chat-board/bin/board.mjs finish --file /path/to/discussion.html --reason "方向確認，接著進入實作。"
-node /Users/guojun/workspace/chat-board/bin/board.mjs resume --file /path/to/discussion.html --reason "加入新的限制條件。"
+node /home/guojun/workspace/chat-board/bin/board.mjs finish --file /path/to/discussion.html --reason "方向確認，接著進入實作。"
+node /home/guojun/workspace/chat-board/bin/board.mjs resume --file /path/to/discussion.html --reason "加入新的限制條件。"
 ```
 
 完整用法：`node bin/board.mjs help`。
